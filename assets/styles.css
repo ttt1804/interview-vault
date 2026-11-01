@@ -97,7 +97,8 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+/* Bỏ vùng xanh mặc định của trình duyệt mobile khi chạm; phản hồi khi chạm do :active đảm nhận */
+html { scroll-behavior: smooth; scroll-padding-top: 84px; -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
 
 body {
@@ -280,8 +281,9 @@ kbd { display: none; font-family: var(--font-mono); font-size: 10.5px; font-weig
   .toolbar > .filter { order: 1; flex: 1 1 calc(100% - 96px); min-width: 0; }
   .toolbar > .qa-position { order: 2; width: auto; white-space: nowrap; }
   .toolbar > .view-toggle { order: 3; flex: none; }
-  /* Tập trung, Luyện tập, Ẩn đã đọc nằm trong menu 3 gạch */
-  .toolbar > .toolbar-actions { display: none; }
+  /* Tập trung, Luyện tập nằm trong menu 3 gạch; Ẩn đã đọc dùng thường xuyên nên giữ ngoài toolbar */
+  .toolbar > .toolbar-actions { order: 4; margin-left: auto; }
+  .toolbar-actions > :not([data-action="toggle-learned"]) { display: none; }
   .toolbar > .filter-empty { order: 5; }
 }
 
@@ -331,7 +333,9 @@ kbd { display: none; font-family: var(--font-mono); font-size: 10.5px; font-weig
 .qa-q { font-family: var(--font-ui); font-size: 17px; font-weight: 600; line-height: 1.4; letter-spacing: -.005em; margin: 0; color: var(--ink); cursor: pointer; }
 .qa-q code { font-size: .92em; }
 .qa-learn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: var(--ink-faint); background: transparent; border: 1px solid var(--line-strong); border-radius: 20px; padding: 4px 11px; cursor: pointer; white-space: nowrap; }
-.qa-learn:hover { border-color: var(--accent); color: var(--accent-ink); }
+/* Chỉ áp dụng cho thiết bị có chuột: trên màn hình cảm ứng :hover bị dính lại sau khi chạm */
+@media (hover: hover) { .qa-learn:hover { border-color: var(--accent); color: var(--accent-ink); } }
+.qa-learn:active { background: var(--surface-2); }
 .qa-learn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 .qa-learn-icon { font-size: 11px; }
 

@@ -252,7 +252,7 @@
     progWrap.hidden = false;
     if (progLabel) progLabel.firstChild.textContent = String(done);
     if (ringFg) ringFg.style.strokeDashoffset = String(100.5 * (1 - done / total));
-    hideBtns.forEach(function (b) { b.hidden = done === 0 && !hideLearned; });
+    hideBtns.forEach(function (b) { b.hidden = done === 0; });
     document.querySelectorAll('[data-action="reset-learned"]').forEach(function (b) {
       /* trong menu luôn hiện, chỉ làm mờ khi chưa có gì để bỏ: nút ẩn đi thì người dùng tưởng không có tính năng này */
       if (b.classList.contains('mm-link')) {
@@ -302,7 +302,6 @@
     disarmReset();
     if (mobileMenu) mobileMenu.open = false;
     window.IVAuth.resetTopic(topicId);
-    setHideLearned(false);
     applyVisibility();
     forgetLast();
     removeResume();
@@ -387,8 +386,12 @@
   }
   if (input) input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(applyVisibility, 140); });
 
-  function setHideLearned(on) {
+  /* persist: chỉ lựa chọn của người dùng mới được lưu, link tới câu đang ẩn chỉ tắt tạm trong trang này */
+  function setHideLearned(on, persist) {
     hideLearned = on;
+    if (persist) {
+      try { if (on) localStorage.setItem('iv-hide-learned', '1'); else localStorage.removeItem('iv-hide-learned'); } catch (e) {}
+    }
     hideBtns.forEach(function (b) {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.textContent = on ? 'Hiện đã đọc' : 'Ẩn đã đọc';
@@ -396,7 +399,7 @@
   }
   hideBtns.forEach(function (b) {
     b.addEventListener('click', function () {
-      setHideLearned(!hideLearned);
+      setHideLearned(!hideLearned, true);
       applyVisibility();
       updateProgress();
     });
@@ -517,6 +520,9 @@
 
   /* ---- Khởi tạo: ưu tiên hash; chế độ tập trung thì về thẳng câu đang đọc dở ---- */
   updateProgress();
+  var savedHide = false;
+  try { savedHide = localStorage.getItem('iv-hide-learned') === '1'; } catch (e) {}
+  if (savedHide) { setHideLearned(true); applyVisibility(); }
   var lastId = readLast();
   var lastArt = lastId ? document.getElementById(lastId) : null;
   if (lastArt && (!lastArt.classList.contains('qa') || isLearned(lastArt))) lastArt = null;

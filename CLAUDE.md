@@ -66,7 +66,7 @@ Global đăng ký giữa các file: `window.IVAuth` (đăng nhập + sync), `win
 
 Đổi tiến độ → `window.dispatchEvent(new Event('iv-progress'))`; các trang khác lắng nghe event
 này để vẽ lại. localStorage keys: `iv-questions-learned`, `iv-srs`, `iv-practice-log`,
-`iv-theme`, `iv-session`, `iv-profile`, `iv-focus`, `iv-last-question`, `iv-progress-resets`.
+`iv-theme`, `iv-session`, `iv-profile`, `iv-focus`, `iv-hide-learned`, `iv-last-question`, `iv-progress-resets`.
 
 Trang chủ đề chỉ mở **một câu tại một thời điểm**: `head()` đặt class `qa-compact` lên `<html>`,
 `enhance.js` giữ câu đang mở bằng `is-open`. Tắt JS, in trang, hoặc `enhance.js` tải lỗi thì mọi câu
