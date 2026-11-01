@@ -10,7 +10,6 @@
 
   var K_SESSION = 'iv-session', K_PROFILE = 'iv-profile';
   var K_SRS = 'iv-srs', K_LEARNED = 'iv-questions-learned', K_LOG = 'iv-practice-log', K_RESETS = 'iv-progress-resets';
-  var today = new Date().toISOString().slice(0, 10);
 
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
@@ -109,7 +108,7 @@
     clearTimeout(pushTimer);
     pushTimer = setTimeout(function () {
       var b = localBlob();
-      api('/progress', { method: 'POST', body: { data: b, todayReviews: b.log[today] || 0 } });
+      api('/progress', { method: 'POST', body: { data: b } });
     }, 2500);
   }
 
@@ -124,7 +123,7 @@
     });
   }
   function pushNow(b) {
-    api('/progress', { method: 'POST', body: { data: b, todayReviews: b.log[today] || 0 } });
+    api('/progress', { method: 'POST', body: { data: b } });
   }
 
   /* ---------- Google Identity Services ---------- */
@@ -176,11 +175,10 @@
       '<div class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-h">' +
         '<button type="button" class="auth-close" data-auth-close aria-label="Đóng">×</button>' +
         '<h2 id="auth-h">Đăng nhập bằng Google</h2>' +
-        '<p class="auth-lead">Đăng nhập để đồng bộ tiến độ học giữa các thiết bị, tham gia bảng xếp hạng và mở khoá nội dung premium.</p>' +
+        '<p class="auth-lead">Đăng nhập để đồng bộ tiến độ học giữa các thiết bị và mở khoá nội dung premium.</p>' +
         '<ul class="auth-list">' +
           '<li>Chúng tôi lưu: <b>email, tên, ảnh đại diện Google</b> và tiến độ học của bạn.</li>' +
-          '<li>Lượt xem trang <b>không</b> bị gắn với danh tính của bạn — thống kê vẫn ẩn danh.</li>' +
-          '<li>Tên chỉ lên bảng xếp hạng nếu bạn tự bật. Xoá dữ liệu bất cứ lúc nào ở trang Tài khoản.</li>' +
+          '<li>Xoá dữ liệu bất cứ lúc nào ở trang Tài khoản.</li>' +
         '</ul>' +
         '<label class="auth-consent"><input type="checkbox" data-auth-agree> ' +
           'Tôi đã đọc và đồng ý với <a href="' + ROOT + 'privacy/" target="_blank" rel="noopener">Chính sách bảo mật</a>.</label>' +

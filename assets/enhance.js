@@ -59,86 +59,24 @@
     nav.appendChild(btn);
   })();
 
-  /* ---- Thống kê lượt xem: gửi pageview + hiện số thật (fallback: đếm tạm phía client) ---- */
-  function animateNumber(els, target, dur) {
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.querySelectorAll('[data-views]').forEach(function (e) { e.hidden = false; });
-    if (reduce || typeof target !== 'number') {
-      els.forEach(function (e) { e.textContent = Number(target || 0).toLocaleString('vi-VN'); });
-      return;
-    }
-    var from = Math.max(0, target - 60), t0 = 0;
-    requestAnimationFrame(function tick(ts) {
-      if (!t0) t0 = ts;
-      var p = Math.min(1, (ts - t0) / dur);
-      var v = Math.round(from + (target - from) * (1 - Math.pow(1 - p, 3)));
-      els.forEach(function (e) { e.textContent = v.toLocaleString('vi-VN'); });
-      if (p < 1) requestAnimationFrame(tick);
+  /* ---- Menu mobile: dùng <details> nên tắt JS vẫn mở được; JS chỉ thêm việc tự đóng ---- */
+  var mobileMenu = document.querySelector('.mobile-menu');
+  if (mobileMenu) {
+    mobileMenu.addEventListener('click', function (e) {
+      if (!e.target.closest) return;
+      /* nút bỏ đánh dấu cần bấm hai lần nên tự đóng menu sau khi thực hiện */
+      if (e.target.closest('[data-action="reset-learned"]')) return;
+      if (e.target.closest('.mm-panel a, .mm-panel button')) mobileMenu.open = false;
+    });
+    document.addEventListener('click', function (e) {
+      if (mobileMenu.open && !mobileMenu.contains(e.target)) mobileMenu.open = false;
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !mobileMenu.open) return;
+      mobileMenu.open = false;
+      mobileMenu.querySelector('summary').focus();
     });
   }
-
-  (function analytics() {
-    var els = document.querySelectorAll('.js-view-count');
-    var base = window.IV_ANALYTICS;
-
-    /* Một phiên = một lượt. Phiên mới khi 30 phút không hoạt động (cửa sổ trượt,
-       chung cho mọi tab). Tải lại / mở nhiều tab trong phiên -> không cộng thêm. */
-    var SESSION_MS = 1800000, freshSession = true;
-    try {
-      var lastSeen = +localStorage.getItem('iv-ses') || 0;
-      freshSession = Date.now() - lastSeen > SESSION_MS;
-      localStorage.setItem('iv-ses', String(Date.now()));
-    } catch (e) {}
-
-    if (!base) return;
-    base = base.replace(/\/+$/, '');
-
-    var dnt = navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.msDoNotTrack === '1';
-    var vid = null;
-    try {
-      vid = localStorage.getItem('iv-vid');
-      if (!vid) {
-        vid = (window.crypto && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
-        localStorage.setItem('iv-vid', vid);
-      }
-    } catch (e) {}
-
-    var tp = document.querySelector('.topic-page');
-    var topic = tp ? tp.getAttribute('data-topic')
-      : document.querySelector('.practice-page') ? 'luyen-tap'
-      : document.querySelector('.stats-page') ? 'stats'
-      : document.querySelector('.acct-page') ? 'tai-khoan'
-      : document.querySelector('.lb-page') ? 'bang-xep-hang'
-      : document.querySelector('.prose-page') ? 'privacy' : 'hub';
-
-    if (!dnt && vid && freshSession) {
-      try {
-        fetch(base + '/collect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({ v: vid, t: topic, p: location.pathname }),
-          keepalive: true, credentials: 'omit', mode: 'cors',
-        }).catch(function () {});
-      } catch (e) {}
-    }
-
-    if (!els.length) return;
-    var s = null;
-    try { s = JSON.parse(sessionStorage.getItem('iv-stats') || 'null'); } catch (e) {}
-    if (s && Date.now() - s._t < 300000) { animateNumber(els, s.totalViews, 800); return; }
-
-    fetch(base + '/stats', { credentials: 'omit', mode: 'cors' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!d) return;
-        d._t = Date.now();
-        try { sessionStorage.setItem('iv-stats', JSON.stringify(d)); } catch (e) {}
-        animateNumber(els, d.totalViews, 800);
-      })
-      .catch(function () {});
-  })();
 
   /* ---- Mục lục nhỏ cho câu trả lời dài: dùng chung cho trang chủ đề và trình luyện tập.
      Nút thay vì link #id để không đụng tới permalink của câu hỏi. ---- */
@@ -295,7 +233,18 @@
   var ringFg = document.querySelector('.ring-fg');
   var progWrap = document.querySelector('.toc-progress');
   var progLabel = document.querySelector('.toc-progress-label');
-  var hideBtn = document.querySelector('[data-action="toggle-learned"]');
+  /* Tính năng của trang chủ đề trong menu mobile; cần JS nên mới dựng ở đây. Xử lý click dùng chung với toolbar qua data-action */
+  var mmPage = document.querySelector('[data-mm-page]');
+  if (mmPage) {
+    mmPage.hidden = false;
+    mmPage.innerHTML =
+      '<p class="mm-title">Trang này</p>' +
+      '<button type="button" class="mm-link" data-action="focus">🧘 Tập trung</button>' +
+      '<a class="mm-link" href="../luyen-tap/?topic=' + encodeURIComponent(topicId) + '">🎯 Luyện tập chủ đề này</a>' +
+      '<button type="button" class="mm-link" data-action="toggle-learned" hidden>Ẩn đã đọc</button>' +
+      '<button type="button" class="mm-link" data-action="reset-learned">Bỏ đánh dấu tất cả</button>';
+  }
+  var hideBtns = [].slice.call(document.querySelectorAll('[data-action="toggle-learned"]'));
   function updateProgress() {
     if (!progWrap) return;
     var total = articles.length;
@@ -303,8 +252,16 @@
     progWrap.hidden = false;
     if (progLabel) progLabel.firstChild.textContent = String(done);
     if (ringFg) ringFg.style.strokeDashoffset = String(100.5 * (1 - done / total));
-    if (hideBtn) hideBtn.hidden = done === 0 && !hideLearned;
-    document.querySelectorAll('[data-action="reset-learned"]').forEach(function (b) { b.hidden = done === 0; });
+    hideBtns.forEach(function (b) { b.hidden = done === 0 && !hideLearned; });
+    document.querySelectorAll('[data-action="reset-learned"]').forEach(function (b) {
+      /* trong menu luôn hiện, chỉ làm mờ khi chưa có gì để bỏ: nút ẩn đi thì người dùng tưởng không có tính năng này */
+      if (b.classList.contains('mm-link')) {
+        b.disabled = done === 0;
+        b.textContent = 'Bỏ đánh dấu tất cả (' + done + ' câu)';
+      } else {
+        b.hidden = done === 0;
+      }
+    });
   }
 
   /* ---- Bỏ đánh dấu cả chủ đề để đọc lại từ đầu. Nút ở mục lục và màn Tiến độ dùng chung ---- */
@@ -317,11 +274,33 @@
     resetBtn.textContent = 'Bỏ đánh dấu tất cả';
     tocProgress.appendChild(resetBtn);
   }
+  /* Xác nhận ngay trên nút, không dùng confirm(): trình duyệt nhúng có thể chặn hộp thoại và tự trả về huỷ */
+  var armedReset = null, armedAt = 0, armTimer;
+  function disarmReset() {
+    clearTimeout(armTimer);
+    if (!armedReset) return;
+    armedReset.classList.remove('is-armed');
+    armedReset.textContent = 'Bỏ đánh dấu tất cả';
+    armedReset = null;
+    updateProgress();
+  }
   document.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-action="reset-learned"]') : null;
-    if (!b || !window.IVAuth) return;
-    var done = articles.filter(isLearned).length;
-    if (!confirm('Bỏ đánh dấu ' + done + ' câu đã đọc trong chủ đề này để đọc lại từ đầu?\nLịch ôn của các câu trong chủ đề cũng bị xoá. Không thể hoàn tác.')) return;
+    if (!b) { disarmReset(); return; }
+    if (!window.IVAuth) return;
+    if (armedReset !== b) {
+      disarmReset();
+      armedReset = b;
+      armedAt = Date.now();
+      b.classList.add('is-armed');
+      b.textContent = 'Bấm lần nữa để bỏ ' + articles.filter(isLearned).length + ' câu (xoá cả lịch ôn)';
+      armTimer = setTimeout(disarmReset, 5000);
+      return;
+    }
+    /* cú bấm đúp vô tình không được tính là xác nhận */
+    if (Date.now() - armedAt < 400) return;
+    disarmReset();
+    if (mobileMenu) mobileMenu.open = false;
     window.IVAuth.resetTopic(topicId);
     setHideLearned(false);
     applyVisibility();
@@ -410,14 +389,17 @@
 
   function setHideLearned(on) {
     hideLearned = on;
-    if (!hideBtn) return;
-    hideBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    hideBtn.textContent = on ? 'Hiện đã đọc' : 'Ẩn đã đọc';
+    hideBtns.forEach(function (b) {
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.textContent = on ? 'Hiện đã đọc' : 'Ẩn đã đọc';
+    });
   }
-  if (hideBtn) hideBtn.addEventListener('click', function () {
-    setHideLearned(!hideLearned);
-    applyVisibility();
-    updateProgress();
+  hideBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      setHideLearned(!hideLearned);
+      applyVisibility();
+      updateProgress();
+    });
   });
 
   /* ---- Đồng bộ từ tài khoản: cập nhật lại trạng thái "đã đọc", không tự chuyển câu ---- */
@@ -455,7 +437,6 @@
   });
 
   /* ---- Chế độ tập trung: chỉ còn một câu trên màn hình ---- */
-  var focusBtn = document.querySelector('[data-action="focus"]');
   function setFocus(on, persist) {
     root.classList.toggle('is-focus', on);
     if (persist !== false) {
@@ -470,7 +451,14 @@
   }
   /* topic-graph.js gọi khi chuyển sang Tiến độ: hai chế độ không dùng chung được, không đổi lựa chọn đã lưu */
   window.IVFocus = { exit: function () { root.classList.remove('is-focus'); } };
-  if (focusBtn) focusBtn.addEventListener('click', function () { setFocus(true); });
+  document.querySelectorAll('[data-action="focus"]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      /* menu mobile vẫn bấm được khi đang ở màn Tiến độ */
+      var listBtn = document.querySelector('.vt-btn[data-view="list"]');
+      if (main.classList.contains('is-graph-view') && listBtn) listBtn.click();
+      setFocus(true);
+    });
+  });
   focusBar.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('button') : null;
     if (!b) return;

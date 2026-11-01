@@ -1,5 +1,5 @@
-/* Tài khoản người dùng: đăng nhập, đồng bộ tiến độ, cài đặt, xoá tài khoản,
-   bảng xếp hạng, và cấp quyền premium (admin). */
+/* Tài khoản người dùng: đăng nhập, đồng bộ tiến độ, xoá tài khoản,
+   và cấp quyền premium (admin). */
 import { json, utcDay } from './lib.js';
 import { verifyGoogleToken, signSession, currentUser } from './auth.js';
 
@@ -14,15 +14,13 @@ async function tierOf(env, sub) {
 
 async function profile(env, sub) {
   const u = await env.DB.prepare(
-    `SELECT sub, email, name, picture, display_name, show_on_leaderboard FROM app_user WHERE sub = ?`
+    `SELECT sub, email, name, picture FROM app_user WHERE sub = ?`
   ).bind(sub).first();
   if (!u) return null;
   return {
     name: u.name,
     email: u.email,
     picture: u.picture,
-    displayName: u.display_name || u.name,
-    showOnLeaderboard: !!u.show_on_leaderboard,
     tier: await tierOf(env, sub),
   };
 }
@@ -72,7 +70,7 @@ export async function getProgress(request, env) {
   return json({ ok: true, rev: row ? row.rev : 0, data }, 200, env);
 }
 
-/* POST /progress  { data: {srs,learned,log}, todayReviews: <int> } */
+/* POST /progress  { data: {srs,learned,log,resets} } */
 export async function putProgress(request, env) {
   const s = await currentUser(request, env);
   if (!s) return json({ ok: false, error: 'auth' }, 401, env);
@@ -88,30 +86,7 @@ export async function putProgress(request, env) {
      RETURNING rev`
   ).bind(s.sub, blob, Date.now()).first()) || { rev: 1 };
 
-  const today = utcDay();
-  const reviews = Math.max(0, Math.min(9999, parseInt(body.todayReviews, 10) || 0));
-  if (reviews > 0) {
-    await env.DB.prepare(
-      `INSERT INTO user_activity_day (sub, day, reviews) VALUES (?1, ?2, ?3)
-       ON CONFLICT(sub, day) DO UPDATE SET reviews = MAX(user_activity_day.reviews, ?3)`
-    ).bind(s.sub, today, reviews).run();
-  }
   return json({ ok: true, rev: upd.rev }, 200, env);
-}
-
-/* POST /settings  { displayName, showOnLeaderboard } */
-export async function putSettings(request, env) {
-  const s = await currentUser(request, env);
-  if (!s) return json({ ok: false, error: 'auth' }, 401, env);
-  let body;
-  try { body = JSON.parse(await request.text()); } catch { return json({ ok: false, error: 'body' }, 400, env); }
-
-  const name = String(body.displayName || '').trim().slice(0, 32) || null;
-  const show = body.showOnLeaderboard ? 1 : 0;
-  await env.DB.prepare(
-    `UPDATE app_user SET display_name = ?, show_on_leaderboard = ? WHERE sub = ?`
-  ).bind(name, show, s.sub).run();
-  return json({ ok: true, user: await profile(env, s.sub) }, 200, env);
 }
 
 /* POST /account/delete — xoá toàn bộ dữ liệu của người dùng */
@@ -125,22 +100,6 @@ export async function deleteAccount(request, env) {
     env.DB.prepare(`DELETE FROM app_user WHERE sub = ?`).bind(s.sub),
   ]);
   return json({ ok: true }, 200, env);
-}
-
-/* GET /leaderboard — công khai, chỉ người bật hiển thị, top 20 theo 7 ngày */
-export async function leaderboard(env) {
-  const since = utcDay(new Date(Date.now() - 6 * 86400000));
-  const res = await env.DB.prepare(
-    `SELECT COALESCE(u.display_name, u.name) AS name, SUM(a.reviews) AS reviews
-     FROM user_activity_day a JOIN app_user u ON u.sub = a.sub
-     WHERE a.day >= ? AND u.show_on_leaderboard = 1
-     GROUP BY a.sub ORDER BY reviews DESC, name ASC LIMIT 20`
-  ).bind(since).all();
-  return json({
-    ok: true,
-    since,
-    entries: (res.results || []).map((r, i) => ({ rank: i + 1, name: r.name, reviews: r.reviews })),
-  }, 200, env);
 }
 
 /* POST /admin/grant  (Authorization: Bearer <ADMIN_TOKEN>)  { email, tier, days } */

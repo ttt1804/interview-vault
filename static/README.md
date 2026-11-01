@@ -13,8 +13,8 @@ Dùng cho:
 | `ads.txt`, `_headers`, ... | Tuỳ nhu cầu |
 
 Ví dụ verify Search Console:
-1. Search Console → thêm property `https://hanlaomax.github.io/iv-process/` → chọn **HTML file**
+1. Search Console → thêm property `https://ttt1804.github.io/interview-vault/` → chọn **HTML file**
 2. Tải file `google....html` Google cung cấp, đặt vào `static/`
 3. `git push` → chờ Actions build xong
-4. Mở `https://hanlaomax.github.io/iv-process/google....html` để chắc file đã live
+4. Mở `https://ttt1804.github.io/interview-vault/google....html` để chắc file đã live
 5. Bấm **Verify** trong Search Console

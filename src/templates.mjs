@@ -47,13 +47,33 @@ export function header(o) {
         }><span aria-hidden="true">${t.icon}</span> ${esc(t.name)}</a>`
     )
     .join('');
+  const mmLink = (href, text, on) =>
+    `<a class="mm-link${on ? ' is-current' : ''}" href="${o.root}${href}"${on ? ' aria-current="page"' : ''}>${text}</a>`;
+  const mmTopics = o.topics
+    .map((t) => mmLink(`${t.id}/`, `<span aria-hidden="true">${t.icon}</span> ${esc(t.name)}`, t.id === o.current))
+    .join('');
   return `<a class="skip-link" href="#main">Bỏ qua tới nội dung</a>
 <header class="site-header">
   <div class="wrap site-header-inner">
-    <a class="brand" href="${o.root}"><span class="brand-mark" aria-hidden="true">🎯</span> Interview Vault</a>
+    <a class="brand" href="${o.root}"><span class="brand-mark" aria-hidden="true">🎯</span> <span class="brand-name">Interview Vault</span></a>
     <nav class="topnav" aria-label="Chủ đề">${links}</nav>
     <a class="topnav-cta${o.current === 'luyen-tap' ? ' is-current' : ''}" href="${o.root}luyen-tap/">🎯 Luyện tập</a>
     <div class="topnav-acct" data-acct hidden></div>
+    <details class="mobile-menu">
+      <summary aria-label="Menu"><span class="mm-bars" aria-hidden="true"></span></summary>
+      <div class="mm-panel">
+        <div class="mm-group" data-mm-page hidden></div>
+        <nav class="mm-group" aria-label="Chủ đề">
+          <p class="mm-title">Chủ đề</p>
+          ${mmTopics}
+        </nav>
+        <nav class="mm-group" aria-label="Công cụ">
+          <p class="mm-title">Công cụ</p>
+          ${mmLink('luyen-tap/', '🎯 Luyện tập', o.current === 'luyen-tap')}
+        </nav>
+        <div class="mm-acct topnav-acct" data-acct hidden></div>
+      </div>
+    </details>
   </div>
 </header>`;
 }
@@ -73,10 +93,9 @@ export function footer(root) {
   const year = new Date().getFullYear();
   return `<footer class="site-footer">
   <div class="wrap">
-    <p class="footer-views" data-views hidden>👁 <b class="js-view-count">—</b> lượt truy cập</p>
     <p>Interview Vault — bộ câu hỏi phỏng vấn cấp độ Middle. Nội dung tiếng Việt, giữ nguyên thuật ngữ tiếng Anh.</p>
     <p class="muted">Cập nhật ${year}. Trang tĩnh, hoạt động không cần JavaScript.</p>
-    <p><a href="${root}">Trang chủ</a> · <a href="${root}luyen-tap/">Luyện tập</a> · <a href="${root}bang-xep-hang/">Bảng xếp hạng</a> · <a href="${root}tai-khoan/">Tài khoản</a> · <a href="${root}stats/">Thống kê</a> · <a href="${root}privacy/">Bảo mật</a> · <a href="${root}sitemap.xml">Sitemap</a></p>
+    <p><a href="${root}">Trang chủ</a> · <a href="${root}luyen-tap/">Luyện tập</a> · <a href="${root}tai-khoan/">Tài khoản</a> · <a href="${root}privacy/">Bảo mật</a> · <a href="${root}sitemap.xml">Sitemap</a></p>
   </div>
 </footer>`;
 }

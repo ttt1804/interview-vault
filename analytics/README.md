@@ -1,23 +1,14 @@
-# iv-analytics — backend thống kê truy cập
+# iv-analytics — backend đăng nhập và đồng bộ tiến độ
 
-Cloudflare **Worker** (API) + **D1** (database SQLite quản lý sẵn). Free tier: 100k request/ngày,
-D1 5 GB, 5 triệu dòng đọc/ngày, 100k dòng ghi/ngày — thừa cho một site nhỏ.
+Cloudflare **Worker** (API) + **D1** (database SQLite quản lý sẵn). Free tier thừa cho một site nhỏ.
+Site chạy đầy đủ khi không có Worker, chỉ không có đăng nhập và đồng bộ. Hiện chưa deploy.
 
-Site tĩnh (GitHub Pages) gọi:
-- `POST /collect` — ghi một lượt truy cập (visitor id + chủ đề); client chỉ gọi **một lần mỗi phiên**
-  (30 phút không hoạt động = phiên mới), nên số "views" = số phiên
-- `GET /stats` — trả JSON tổng hợp cho footer + trang `/stats`
-
-Visitor id là chuỗi ngẫu nhiên trong `localStorage`, không cookie. Worker **có lưu địa chỉ IP**
-(bảng `visitor_ip`) và trang `/stats` hiển thị công khai — xem cảnh báo ở README gốc.
-
-**Đăng nhập Google (tuỳ chọn)** — để đồng bộ tiến độ học + bảng xếp hạng:
+Các route:
 - `POST /auth` `{credential}` — verify Google ID token, trả session token
-- `GET /me`, `GET|POST /progress`, `POST /settings`, `POST /account/delete`
-- `GET /leaderboard` — công khai
+- `GET /me`, `GET|POST /progress`, `POST /account/delete`
 - `POST /admin/grant` — cấp premium (cần `Authorization: Bearer <ADMIN_TOKEN>`)
 
-Xem phần **C** bên dưới để bật.
+Xem phần **C** bên dưới để bật đăng nhập.
 
 ## Kiểm thử tại máy (không cần Cloudflare)
 
@@ -25,22 +16,8 @@ Xem phần **C** bên dưới để bật.
 cd analytics && npm test        # hoặc: node test.mjs
 ```
 
-`test.mjs` chạy `schema.sql` + `collect()` + `stats()` thật trên SQLite trong bộ nhớ
-(`node:sqlite`, cần Node 22+) qua một shim tối giản của API D1. Nhờ đó kiểm chứng được SQL và
-logic Worker mà không phải deploy. Thoát mã 1 khi có assertion sai — dùng được trong CI.
-
-## Đã có DB từ trước? Chạy lại schema
-
-`schema.sql` dùng `CREATE TABLE IF NOT EXISTS` nên chạy lại an toàn. Sau khi cập nhật code,
-**bắt buộc** chạy lại để tạo bảng `visitor_ip` và `ip_day`, rồi mới deploy Worker:
-
-```powershell
-cd analytics
-wrangler d1 execute iv-analytics --remote --file=schema.sql
-wrangler deploy
-```
-
-Thiếu bước này thì `/collect` và `/stats` sẽ lỗi vì bảng chưa tồn tại.
+`test.mjs` chạy `schema.sql` và Worker thật trên SQLite trong bộ nhớ (dùng `assets/vendor/sql-wasm`)
+qua một shim tối giản của API D1. Thoát mã 1 khi có assertion sai — dùng được trong CI.
 
 ---
 
@@ -88,7 +65,7 @@ wrangler d1 execute iv-analytics --local --file=schema.sql
 ```powershell
 wrangler d1 execute iv-analytics --remote --command "SELECT name FROM sqlite_master WHERE type='table'"
 ```
-Phải thấy: `visitor`, `visitor_day`, `daily`, `daily_topic`.
+Phải thấy: `app_user`, `user_progress`, `user_activity_day`, `user_entitlement`.
 
 Đến đây "SQL server" đã sẵn sàng. Deploy Worker và nối site ở phần B (làm sau).
 
@@ -105,7 +82,7 @@ wrangler deploy
 ```
 In ra URL, ví dụ `https://iv-analytics.<subdomain>.workers.dev`. Thử:
 ```powershell
-curl https://iv-analytics.<subdomain>.workers.dev/stats
+curl https://iv-analytics.<subdomain>.workers.dev/health
 ```
 
 ### 3. Cho site biết URL này
@@ -114,7 +91,7 @@ GitHub repo → **Settings → Secrets and variables → Actions → Variables �
 - Value: URL Worker ở trên (không có `/` cuối)
 
 Push lại (hoặc **Actions → Deploy → Re-run**) để build site với biến này.
-Chưa đặt biến thì site vẫn chạy — footer dùng bộ đếm tạm phía client.
+Chưa đặt biến thì site vẫn chạy, chỉ không có đăng nhập.
 
 ---
 
@@ -125,13 +102,13 @@ Chưa đặt biến thì site vẫn chạy — footer dùng bộ đếm tạm ph
 2. **APIs & Services → OAuth consent screen**:
    - User type: **External** → Create
    - App name: `Interview Vault`, support email: email của bạn
-   - **App privacy policy URL**: `https://hanlaomax.github.io/iv-process/privacy/`
+   - **App privacy policy URL**: `https://ttt1804.github.io/interview-vault/privacy/`
    - Scopes: chỉ giữ `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`
      (không nhạy cảm → không cần Google duyệt)
    - Test users: thêm email của bạn nếu app còn "Testing"; bấm **Publish app** để mở cho mọi người
 3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Web application**
-   - **Authorized JavaScript origins**: `https://hanlaomax.github.io`
+   - **Authorized JavaScript origins**: `https://ttt1804.github.io`
    - (Không cần redirect URI)
    - Copy **Client ID** (dạng `xxxxx.apps.googleusercontent.com`)
 
@@ -168,21 +145,6 @@ curl -X POST https://iv-analytics.<sub>.workers.dev/admin/grant `
 (Người đó phải đăng nhập ít nhất 1 lần trước để có bản ghi.)
 
 ---
-
-## Xem / truy vấn dữ liệu
-
-```powershell
-# 10 ngày gần nhất
-wrangler d1 execute iv-analytics --remote --command "SELECT * FROM daily ORDER BY day DESC LIMIT 10"
-
-# tổng lượt xem, tổng khách, khách quay lại
-wrangler d1 execute iv-analytics --remote --command "SELECT (SELECT COALESCE(SUM(views),0) FROM daily) AS views, (SELECT COUNT(*) FROM visitor) AS visitors, (SELECT COUNT(*) FROM visitor WHERE first_day<>last_day) AS returning"
-
-# top chủ đề
-wrangler d1 execute iv-analytics --remote --command "SELECT topic, SUM(views) v FROM daily_topic GROUP BY topic ORDER BY v DESC"
-```
-
-Hoặc dùng SQL console trên web: **Cloudflare Dashboard → Storage & Databases → D1 → iv-analytics → Console**.
 
 ## Local dev
 

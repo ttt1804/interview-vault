@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { hash } from './format.mjs';
 import { isSupportedLang } from './highlight.mjs';
 import {
-  renderHub, renderTopicPage, renderStatsPage, renderPracticePage, practiceData,
+  renderHub, renderTopicPage, renderPracticePage, practiceData,
   renderSitemap, render404,
 } from './render.mjs';
-import { renderAccountPage, renderLeaderboardPage, renderPrivacyPage } from './render-user.mjs';
+import { renderAccountPage, renderPrivacyPage } from './render-user.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
@@ -23,7 +23,7 @@ if (!siteUrl) {
 }
 siteUrl = (siteUrl || 'https://example.github.io/interview-vault').replace(/\/?$/, '/');
 
-/* URL backend thống kê (Cloudflare Worker) — trống thì site dùng bộ đếm tạm phía client */
+/* URL backend (Cloudflare Worker) cho đăng nhập và đồng bộ tiến độ — trống thì các tính năng này tự ẩn */
 const analyticsUrl = (process.env.ANALYTICS_URL || '').trim().replace(/\/+$/, '');
 
 /* Google OAuth Client ID — trống thì nút đăng nhập bị ẩn (site vẫn chạy bình thường) */
@@ -105,10 +105,6 @@ mkdirSync(join(DIST, 'assets'), { recursive: true });
 /* Trang chủ */
 writeFileSync(join(DIST, 'index.html'), renderHub({ topics, counts, total, siteUrl, analyticsUrl, googleClientId }));
 
-/* Trang thống kê */
-mkdirSync(join(DIST, 'stats'), { recursive: true });
-writeFileSync(join(DIST, 'stats', 'index.html'), renderStatsPage({ topics, siteUrl, analyticsUrl, googleClientId }));
-
 /* Trang luyện tập + dữ liệu nội dung đầy đủ (tải on-demand) */
 const allQuestions = topics.flatMap((t) => SS.q[t.id] || []);
 mkdirSync(join(DIST, 'luyen-tap'), { recursive: true });
@@ -118,10 +114,9 @@ writeFileSync(
 );
 writeFileSync(join(DIST, 'luyen-tap', 'questions.json'), practiceData(allQuestions));
 
-/* Trang tài khoản / bảng xếp hạng / bảo mật (đăng nhập Google) */
+/* Trang tài khoản / bảo mật (đăng nhập Google) */
 for (const [dir, fn] of [
   ['tai-khoan', renderAccountPage],
-  ['bang-xep-hang', renderLeaderboardPage],
   ['privacy', renderPrivacyPage],
 ]) {
   mkdirSync(join(DIST, dir), { recursive: true });
@@ -155,8 +150,6 @@ cpSync(join(ROOT, 'assets', 'styles.css'), join(DIST, 'assets', 'styles.css'));
 cpSync(join(ROOT, 'assets', 'enhance.js'), join(DIST, 'assets', 'enhance.js'));
 cpSync(join(ROOT, 'assets', 'auth.js'), join(DIST, 'assets', 'auth.js'));
 cpSync(join(ROOT, 'assets', 'account.js'), join(DIST, 'assets', 'account.js'));
-cpSync(join(ROOT, 'assets', 'leaderboard.js'), join(DIST, 'assets', 'leaderboard.js'));
-cpSync(join(ROOT, 'assets', 'stats.js'), join(DIST, 'assets', 'stats.js'));
 cpSync(join(ROOT, 'assets', 'practice.js'), join(DIST, 'assets', 'practice.js'));
 cpSync(join(ROOT, 'assets', 'sql-run.js'), join(DIST, 'assets', 'sql-run.js'));
 mkdirSync(join(DIST, 'assets', 'vendor'), { recursive: true });

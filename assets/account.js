@@ -74,8 +74,6 @@
     var av = $('[data-acct-avatar]');
     if (u.picture) { av.src = u.picture; av.hidden = false; } else av.hidden = true;
     $('[data-acct-tier]').textContent = u.tier === 'premium' ? '★ Premium' : 'Gói miễn phí';
-    $('[data-acct-display]').value = u.displayName || u.name || '';
-    $('[data-acct-show]').checked = !!u.showOnLeaderboard;
     paintStats();
   }
 
@@ -83,20 +81,6 @@
   window.IVAuth.onChange(render);
 
   $('[data-acct-signout]').addEventListener('click', function () { window.IVAuth.signOut(); });
-
-  $('[data-acct-save]').addEventListener('click', function () {
-    var btn = this; btn.disabled = true;
-    window.IVAuth.api('/settings', {
-      method: 'POST',
-      body: { displayName: $('[data-acct-display]').value, showOnLeaderboard: $('[data-acct-show]').checked },
-    }).then(function (res) {
-      btn.disabled = false;
-      if (res && res.ok) {
-        var s = $('[data-acct-saved]'); s.hidden = false; setTimeout(function () { s.hidden = true; }, 2000);
-        window.IVAuth.refresh();
-      }
-    });
-  });
 
   $('[data-acct-delete]').addEventListener('click', function () {
     if (!confirm('Xoá toàn bộ tài khoản và tiến độ khỏi máy chủ? Không thể hoàn tác.')) return;
