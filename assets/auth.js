@@ -9,7 +9,7 @@
   var ENABLED = !!(CLIENT_ID && API);
 
   var K_SESSION = 'iv-session', K_PROFILE = 'iv-profile';
-  var K_SRS = 'iv-srs', K_LEARNED = 'iv-questions-learned', K_LOG = 'iv-practice-log';
+  var K_SRS = 'iv-srs', K_LEARNED = 'iv-questions-learned', K_LOG = 'iv-practice-log', K_RESETS = 'iv-progress-resets';
   var today = new Date().toISOString().slice(0, 10);
 
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
@@ -53,30 +53,54 @@
 
   /* ---------- đồng bộ tiến độ ---------- */
   function localBlob() {
-    return { srs: lsGet(K_SRS, {}), learned: lsGet(K_LEARNED, {}), log: lsGet(K_LOG, {}) };
+    return { srs: lsGet(K_SRS, {}), learned: lsGet(K_LEARNED, {}), log: lsGet(K_LOG, {}), resets: lsGet(K_RESETS, {}) };
   }
 
+  function topicOf(id) {
+    var cut = id.lastIndexOf('-');
+    return cut > 0 ? id.slice(0, cut) : id;
+  }
+
+  /* Union thuần sẽ làm dấu đã bỏ quay lại từ máy khác. Bên nào có mốc "Bỏ đánh dấu tất cả"
+     cũ hơn thì dữ liệu của chủ đề đó ở bên ấy đã lỗi thời và bị bỏ qua khi gộp. */
   function merge(server) {
     var loc = localBlob(), s = server || {};
-    var srs = {}, learned = {}, log = {};
+    var srs = {}, learned = {}, log = {}, resets = {};
+    var ra = s.resets || {}, rb = loc.resets, t;
+    for (t in ra) resets[t] = ra[t];
+    for (t in rb) resets[t] = Math.max(resets[t] || 0, rb[t]);
+    function serverStale(id) { var t = topicOf(id); return (rb[t] || 0) > (ra[t] || 0); }
+    function localStale(id) { var t = topicOf(id); return (ra[t] || 0) > (rb[t] || 0); }
     var a = s.srs || {}, b = loc.srs, id;
-    for (id in a) srs[id] = a[id];
+    for (id in a) if (!serverStale(id)) srs[id] = a[id];
     for (id in b) {
+      if (localStale(id)) continue;
       var x = srs[id], y = b[id];
       if (!x || (y.reps || 0) > (x.reps || 0) || ((y.reps || 0) === (x.reps || 0) && (y.due || 0) > (x.due || 0))) srs[id] = y;
     }
     var la = s.learned || {}, lb = loc.learned;
-    for (id in la) learned[id] = 1;
-    for (id in lb) learned[id] = 1;
+    for (id in la) if (!serverStale(id)) learned[id] = 1;
+    for (id in lb) if (!localStale(id)) learned[id] = 1;
     var ga = s.log || {}, gb = loc.log, d;
     for (d in ga) log[d] = ga[d];
     for (d in gb) log[d] = Math.max(log[d] || 0, gb[d]);
 
     var before = JSON.stringify(loc);
-    lsSet(K_SRS, srs); lsSet(K_LEARNED, learned); lsSet(K_LOG, log);
-    var after = JSON.stringify({ srs: srs, learned: learned, log: log });
+    lsSet(K_SRS, srs); lsSet(K_LEARNED, learned); lsSet(K_LOG, log); lsSet(K_RESETS, resets);
+    var after = JSON.stringify({ srs: srs, learned: learned, log: log, resets: resets });
     if (before !== after) window.dispatchEvent(new Event('iv-progress'));
-    return { srs: srs, learned: learned, log: log };
+    return { srs: srs, learned: learned, log: log, resets: resets };
+  }
+
+  /* Bỏ dấu đã đọc + lịch ôn của một chủ đề; streak và số liệu theo ngày giữ nguyên */
+  function resetTopic(topic) {
+    var b = localBlob(), id;
+    for (id in b.learned) if (topicOf(id) === topic) delete b.learned[id];
+    for (id in b.srs) if (topicOf(id) === topic) delete b.srs[id];
+    b.resets[topic] = Date.now();
+    lsSet(K_LEARNED, b.learned); lsSet(K_SRS, b.srs); lsSet(K_RESETS, b.resets);
+    window.dispatchEvent(new Event('iv-progress'));
+    pushProgress();
   }
 
   var pushTimer = null;
@@ -212,6 +236,7 @@
       setSession(null, null);
     },
     pushProgress: pushProgress,
+    resetTopic: resetTopic,
     refresh: function () {
       if (!session) return Promise.resolve(null);
       return api('/me').then(function (r) {

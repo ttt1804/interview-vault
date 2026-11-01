@@ -1,7 +1,6 @@
 /* Suy ra quan hệ giữa các câu hỏi trong cùng một chủ đề:
    - chip "khái niệm" cho mỗi câu (thuật ngữ **in đậm**)
    - danh sách "câu liên quan" (tự động + ghi đè thủ công qua q.related)
-   - dữ liệu bản đồ khái niệm (nodes/edges) cho graph view
    Dùng chung bởi build.mjs + render.mjs. Không phụ thuộc npm. */
 import { boldTerms } from './format.mjs';
 
@@ -88,27 +87,9 @@ function computeChips(list, A) {
   return map;
 }
 
-function computeGraph(list, related) {
-  const idx = new Map(list.map((q, i) => [q.id, i]));
-  const seen = new Set();
-  const edges = [];
-  list.forEach((q, i) => {
-    for (const rid of related.get(q.id) || []) {
-      const j = idx.get(rid);
-      if (j == null) continue;
-      const [a, b] = i < j ? [i, j] : [j, i];
-      const key = a + '-' + b;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edges.push([a, b, 1]);
-    }
-  });
-  return { nodes: list.map((q) => [q.id, q.cat]), edges };
-}
-
-/* connect(list) -> { related: Map<id,[id]>, chips: Map<id,[term]>, graph: {nodes,edges} } */
+/* connect(list) -> { related: Map<id,[id]>, chips: Map<id,[term]> } */
 export function connect(list) {
   const A = analyze(list);
   const related = computeRelated(list, A);
-  return { related, chips: computeChips(list, A), graph: computeGraph(list, related) };
+  return { related, chips: computeChips(list, A) };
 }

@@ -74,7 +74,7 @@
     rows.forEach(function (tr) {
       var s = bucket(tr.getAttribute('data-id')), dot = tr.querySelector('.pr-dot');
       dot.className = 'pr-dot is-' + s;
-      dot.title = s === 'learned' ? 'Đã thuộc' : s === 'due' ? 'Cần ôn' : 'Chưa làm';
+      dot.title = s === 'learned' ? 'Đã đọc' : s === 'due' ? 'Cần ôn' : 'Chưa làm';
     });
   }
 
@@ -160,11 +160,12 @@
 
   function enterPlayer(ids) {
     if (!ids.length) return;
-    var startBtn = $('[data-pr-start]');
+    var startBtn = $('[data-pr-start]'), startHtml = startBtn.innerHTML;
     startBtn.disabled = true; startBtn.textContent = 'Đang tải…';
     loadData().then(function () {
       queue = ids; qi = 0; results = { again: 0, hard: 0, good: 0 };
       browseEl.hidden = true; playerEl.hidden = false;
+      document.body.classList.add('is-session');
       $('[data-pr-end]').hidden = true; qcard.hidden = false;
       $('[data-pr-total]').textContent = queue.length;
       var dots = $('[data-pr-dots]'); dots.innerHTML = '';
@@ -175,7 +176,8 @@
       startBtn.textContent = 'Lỗi tải — thử lại';
     }).then(function () {
       startBtn.disabled = false;
-      if (startBtn.textContent === 'Đang tải…') startBtn.textContent = 'Bắt đầu luyện';
+      /* khôi phục cả <span> đếm số câu mà applyFilter cần ghi vào */
+      if (startBtn.textContent === 'Đang tải…') startBtn.innerHTML = startHtml;
     });
   }
 
@@ -200,10 +202,10 @@
       var res = $('[data-pr-code-result]'); res.hidden = true; res.innerHTML = '';
       var sc = $('[data-pr-code-schema]'); sc.open = false; sc.dataset.loaded = '';
       $('[data-pr-code-schema-body]').innerHTML = '';
-      rev.textContent = 'Xem giải thích khái niệm';
+      $('[data-pr-reveal-text]').textContent = 'Xem giải thích khái niệm';
     } else {
       panel.hidden = true;
-      rev.textContent = 'Hiện đáp án';
+      $('[data-pr-reveal-text]').textContent = 'Hiện đáp án';
     }
   }
 
@@ -211,6 +213,7 @@
     var b = $('[data-pr-qbody]');
     b.hidden = false; this.hidden = true;
     if (!curCode) $('[data-pr-grade]').hidden = false;
+    if (window.IVOutline) window.IVOutline(b);
     if (window.IVViz && window.IVViz.mount) {
       $$('figure.viz[data-viz]', b).forEach(window.IVViz.mount);
     }
@@ -319,12 +322,13 @@
     qcard.hidden = true;
     $('[data-pr-end]').hidden = false;
     $('[data-pr-end-summary]').textContent =
-      queue.length + ' câu · ' + results.good + ' đã thuộc · ' + results.hard + ' khó · ' + results.again + ' cần ôn lại';
+      queue.length + ' câu · ' + results.good + ' nhớ rõ · ' + results.hard + ' khó · ' + results.again + ' cần ôn lại';
     paintDots(); paintStats();
   }
 
   function exitToBrowse() {
     playerEl.hidden = true; browseEl.hidden = false;
+    document.body.classList.remove('is-session');
     qcard.hidden = false; $('[data-pr-end]').hidden = true;
     paintDots(); paintStats(); applyFilter();
     window.scrollTo(0, 0);
@@ -340,7 +344,9 @@
   });
 
   document.addEventListener('keydown', function (e) {
-    if (playerEl.hidden || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    var tag = e.target.tagName;
+    if (playerEl.hidden || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.code === 'Space' && !$('[data-pr-reveal]').hidden) { e.preventDefault(); $('[data-pr-reveal]').click(); }
     else if (!$('[data-pr-grade]').hidden) {
       var m = { Digit1: 'again', Digit2: 'hard', Digit3: 'good' }[e.code];

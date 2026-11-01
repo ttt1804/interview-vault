@@ -80,12 +80,17 @@ function demoSection(q) {
   return `<div class="qa-block qa-demo"><h4>Code &amp; cấu hình</h4>${items.map(demoBlock).join('')}</div>`;
 }
 
+const LONG_ANSWER_WORDS = 300;
+
 /* 3 khối trả lời + code minh hoạ + hình minh hoạ — dùng chung cho trang chủ đề và trình luyện tập.
    forPlayer: bỏ hình diagram cũ (cần script riêng); viz vẫn giữ. */
 function qaBlocks(q, forPlayer) {
   const figure = q.viz ? vizFigure(q.viz) : !forPlayer && q.diagram ? diagramFigure(q.diagram) : '';
-  return `<div class="qa-block qa-answer"><h4>Trả lời</h4>${fmt(q.answer)}</div>
-    <div class="qa-block qa-essence"><h4>Bản chất</h4>${fmt(q.essence)}</div>
+  const answer = `<div class="qa-block qa-answer"><h4>Trả lời</h4>${fmt(q.answer)}</div>`;
+  const essence = `<div class="qa-block qa-essence"><h4>Bản chất</h4>${fmt(q.essence)}</div>`;
+  /* Bài giảng dài: nêu ý chính trước để người đọc biết đích đến */
+  const isLong = q.answer.trim().split(/\s+/).length >= LONG_ANSWER_WORDS;
+  return `${isLong ? essence + answer : answer + essence}
     <div class="qa-block qa-example"><h4>Ví dụ thực tế</h4>${fmt(q.example)}</div>
     ${demoSection(q)}
     ${figure}`;
@@ -97,7 +102,7 @@ function questionArticle(q, n, ctx) {
     <span class="qa-num" aria-hidden="true">${n}</span>
     <h3 class="qa-q">${esc(q.q)}</h3>
     <button type="button" class="qa-learn" data-id="${esc(q.id)}" aria-pressed="false">
-      <span class="qa-learn-icon" aria-hidden="true">✓</span><span class="qa-learn-text">Đã thuộc</span>
+      <span class="qa-learn-icon" aria-hidden="true">✓</span><span class="qa-learn-text">Đã đọc</span>
     </button>
     <a class="qa-permalink" href="#${esc(q.id)}" aria-label="Liên kết cố định tới câu hỏi này">#</a>
   </div>
@@ -133,7 +138,7 @@ export function renderTopicPage({ topic, list, topics, siteUrl, hasDiagrams, has
   const prev = topics[idx - 1];
   const next = topics[idx + 1];
 
-  const { related, graph } = connect(list);
+  const { related } = connect(list);
   const ctx = { related, byId: new Map(list.map((q) => [q.id, q])) };
 
   const toc = groups
@@ -171,7 +176,7 @@ export function renderTopicPage({ topic, list, topics, siteUrl, hasDiagrams, has
         <div class="toc-progress" data-topic="${topic.id}" hidden>
           <svg viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle class="ring-bg" cx="18" cy="18" r="16"/><circle class="ring-fg" cx="18" cy="18" r="16"/></svg>
           <span class="toc-progress-label">0<small>/${list.length}</small></span>
-          <span class="toc-progress-text">đã thuộc</span>
+          <span class="toc-progress-text">đã đọc</span>
         </div>
         <p class="toc-title">Mục lục</p>
         <ol class="toc-list">${toc}</ol>
@@ -185,27 +190,26 @@ export function renderTopicPage({ topic, list, topics, siteUrl, hasDiagrams, has
       <div class="toolbar" role="search">
         <div class="view-toggle" role="group" aria-label="Kiểu xem" hidden>
           <button type="button" class="vt-btn is-on" data-view="list" aria-pressed="true">Danh sách</button>
-          <button type="button" class="vt-btn" data-view="graph" aria-pressed="false">Bản đồ</button>
+          <button type="button" class="vt-btn" data-view="graph" aria-pressed="false">Tiến độ</button>
         </div>
         <label class="filter"><span class="visually-hidden">Lọc câu hỏi</span>
           <input type="search" class="filter-input" placeholder="Lọc câu hỏi trong trang…" autocomplete="off">
         </label>
         <div class="toolbar-actions">
-          <a class="btn-ghost btn-practice" href="../luyen-tap/?topic=${topic.id}">🎯 Luyện tập chủ đề</a>
-          <button type="button" class="btn-ghost" data-action="toggle-learned" hidden>Ẩn câu đã thuộc</button>
-          <button type="button" class="btn-ghost" data-action="collapse-all">Thu gọn tất cả</button>
+          <button type="button" class="btn-ghost" data-action="focus" title="Phím F">Tập trung</button>
+          <a class="btn-ghost btn-practice" href="../luyen-tap/?topic=${topic.id}">🎯 Luyện tập</a>
+          <button type="button" class="btn-ghost" data-action="toggle-learned" hidden>Ẩn đã đọc</button>
         </div>
         <p class="filter-empty" hidden>Không có câu hỏi khớp từ khoá.</p>
       </div>
       ${sections}
-      <section class="topic-graph" aria-label="Bản đồ khái niệm" hidden>
-        <noscript><p class="graph-noscript">Bật JavaScript để xem bản đồ khái niệm.</p></noscript>
+      <section class="topic-graph" aria-label="Tiến độ đọc theo mục" hidden>
+        <noscript><p class="graph-noscript">Bật JavaScript để xem tiến độ đọc theo mục.</p></noscript>
       </section>
       ${pager}
     </div>
   </div>
 </main>
-<script type="application/json" id="graph-data">${JSON.stringify(graph).replace(/</g, '\\u003c')}</script>
 ${footer('../')}`;
 
   const topicScripts = ['assets/topic-graph.js'];
@@ -357,7 +361,7 @@ export function renderPracticePage({ topics, questions, siteUrl, analyticsUrl, g
       Câu bạn chưa chắc sẽ được lặp lại sớm hơn (spaced repetition). Tiến độ lưu trên trình duyệt.</p>
 
     <div class="pr-stats" data-pr-stats>
-      <div class="pr-stat"><b data-k="learned">0</b><span>đã thuộc</span></div>
+      <div class="pr-stat"><b data-k="learned">0</b><span>đã đọc</span></div>
       <div class="pr-stat"><b data-k="due">0</b><span>cần ôn</span></div>
       <div class="pr-stat"><b data-k="today">0</b><span>luyện hôm nay</span></div>
       <div class="pr-stat"><b data-k="streak">0</b><span>ngày liên tục</span></div>
@@ -375,7 +379,7 @@ export function renderPracticePage({ topics, questions, siteUrl, analyticsUrl, g
               <option value="">Mọi trạng thái</option>
               <option value="new">Chưa làm</option>
               <option value="due">Cần ôn</option>
-              <option value="learned">Đã thuộc</option>
+              <option value="learned">Đã đọc</option>
               <option value="code">Có bài tập code</option>
             </select>
           </label>
@@ -429,14 +433,14 @@ ${rows}
           <div class="pr-code-result" data-pr-code-result hidden></div>
         </div>
 
-        <button type="button" class="pr-reveal" data-pr-reveal>Hiện đáp án</button>
+        <button type="button" class="pr-reveal" data-pr-reveal><span data-pr-reveal-text>Hiện đáp án</span> <kbd>Space</kbd></button>
         <div class="pr-qcard-body qa-body" data-pr-qbody hidden></div>
         <div class="pr-grade" data-pr-grade hidden>
           <p class="pr-grade-label">Bạn nhớ tới đâu?</p>
           <div class="pr-grade-btns">
-            <button type="button" data-g="again"><b>Không nhớ</b><span>ôn lại sớm</span></button>
-            <button type="button" data-g="hard"><b>Khó</b><span>~1 ngày</span></button>
-            <button type="button" data-g="good"><b>Đã thuộc</b><span>giãn dần</span></button>
+            <button type="button" data-g="again"><b>Không nhớ <kbd>1</kbd></b><span>ôn lại sớm</span></button>
+            <button type="button" data-g="hard"><b>Khó <kbd>2</kbd></b><span>~1 ngày</span></button>
+            <button type="button" data-g="good"><b>Nhớ rõ <kbd>3</kbd></b><span>giãn dần</span></button>
           </div>
         </div>
       </article>
@@ -542,10 +546,10 @@ export function renderHub({ topics, counts, total, siteUrl, analyticsUrl, google
   <section class="wrap how">
     <h2>Cách dùng để học hiệu quả</h2>
     <ol class="how-list">
-      <li><b>Đọc phần "Bản chất" trước.</b> Nếu tự giải thích lại được, đánh dấu "đã thuộc" và bỏ qua.</li>
+      <li><b>Đọc phần "Bản chất" trước.</b> Nếu tự giải thích lại được, đánh dấu "đã đọc" và bỏ qua.</li>
       <li><b>Chưa chắc thì đọc "Trả lời" đầy đủ,</b> rồi soi "Ví dụ thực tế" để neo kiến thức vào tình huống.</li>
       <li><b>Dùng ô lọc trong mỗi chủ đề</b> để ôn nhanh theo từ khoá (ví dụ: "index", "rebalancing", "MVCC").</li>
-      <li><b>Tiến độ "đã thuộc" được lưu trên trình duyệt</b> — quay lại chỉ cần xem các câu còn lại.</li>
+      <li><b>Tiến độ "đã đọc" được lưu trên trình duyệt</b> — quay lại chỉ cần xem các câu còn lại.</li>
     </ol>
   </section>
 </main>
