@@ -47,7 +47,7 @@ Env var đọc lúc build: `SITE_URL` (mặc định `package.json` → `homepag
 |---|---|
 | `src/format.mjs` | markdown-lite → HTML (`fmt`), `esc`, `slugify` (bỏ dấu tiếng Việt), `hash`, `plain`, `truncate` |
 | `src/highlight.mjs` | tô màu cú pháp lúc build (`highlight`, `normalizeLang`, `langLabel`, `isSupportedLang`) — tokenizer tự viết, không dependency |
-| `src/relate.mjs` | `connect(list)` → câu liên quan tự động + chip khái niệm + graph, chấm điểm theo term **in đậm**/`code` với df/rarity |
+| `src/relate.mjs` | `connect(list)` → câu liên quan tự động + chip khái niệm, chấm điểm theo term **in đậm**/`code` với df/rarity |
 | `src/templates.mjs` | `head()` (SEO đầy đủ), `header()`, `footer()`, `breadcrumb()`, `page()` |
 | `src/render.mjs` | trang chủ, trang chủ đề (FAQPage JSON-LD), `/stats`, `/luyen-tap` + `questions.json`, sitemap, 404 |
 | `src/render-user.mjs` | `/tai-khoan`, `/bang-xep-hang`, `/privacy` |
@@ -66,7 +66,20 @@ Global đăng ký giữa các file: `window.IVAuth` (đăng nhập + sync), `win
 
 Đổi tiến độ → `window.dispatchEvent(new Event('iv-progress'))`; các trang khác lắng nghe event
 này để vẽ lại. localStorage keys: `iv-questions-learned`, `iv-srs`, `iv-practice-log`,
-`iv-theme`, `iv-vid`, `iv-ses`, `iv-session`, `iv-profile`.
+`iv-theme`, `iv-vid`, `iv-ses`, `iv-session`, `iv-profile`, `iv-focus`, `iv-last-question`, `iv-progress-resets`.
+
+Trang chủ đề chỉ mở **một câu tại một thời điểm**: `head()` đặt class `qa-compact` lên `<html>`,
+`enhance.js` giữ câu đang mở bằng `is-open`. Tắt JS, in trang, hoặc `enhance.js` tải lỗi thì mọi câu
+vẫn mở đủ — giữ nguyên tính chất này. Mở câu bằng `openQuestion()`/`goTo()`, đừng tự đổi class.
+Phím tắt trang chủ đề: `F` (tập trung, lưu ở `iv-focus`), `J`/`K` (chuyển câu), `Esc` (thoát).
+Phím tắt phải bỏ qua ô nhập liệu và tổ hợp có Ctrl/Meta/Alt.
+
+Màn **Tiến độ** (`topic-graph.js`, chuyển bằng nút Danh sách/Tiến độ) là lưới theo mục: mỗi mục một hàng,
+mỗi câu một ô, **màu ô chỉ nói trạng thái đọc**. Trạng thái đọc từ class của `.qa`, không lưu riêng.
+
+"Bỏ đánh dấu tất cả" (`IVAuth.resetTopic`) xoá `learned` + `srs` của một chủ đề và ghi mốc vào
+`iv-progress-resets`. `merge()` trong `auth.js` bỏ dữ liệu của chủ đề ở bên có mốc cũ hơn, nếu không
+union sẽ làm dấu đã bỏ quay lại. Từ hiển thị là "Đã đọc"; key và class vẫn tên `learned`.
 
 Viz renderer đăng ký theo `type`: `compare`/`layers`/`tree`/`bars` ở `viz-static.js`,
 `flow`/`sequence`/`states`/`cycle`/`timeline`/`quadrant` ở `viz-anim.js`. Thêm type mới =

@@ -32,7 +32,7 @@ export function renderAccountPage(o) {
       </div>
 
       <div class="acct-stats" data-acct-stats>
-        <div class="acct-stat"><b data-k="learned">0</b><span>câu đã thuộc</span></div>
+        <div class="acct-stat"><b data-k="learned">0</b><span>câu đã đọc</span></div>
         <div class="acct-stat"><b data-k="due">0</b><span>câu cần ôn</span></div>
         <div class="acct-stat"><b data-k="streak">0</b><span>ngày liên tục</span></div>
         <div class="acct-stat"><b data-k="week">0</b><span>câu luyện / 7 ngày</span></div>
@@ -62,7 +62,7 @@ export function renderAccountPage(o) {
 
       <section class="acct-block acct-danger">
         <h2>Dữ liệu của bạn</h2>
-        <p class="muted">Chúng tôi lưu: email, tên, ảnh đại diện Google, và tiến độ học (câu đã thuộc,
+        <p class="muted">Chúng tôi lưu: email, tên, ảnh đại diện Google, và tiến độ học (câu đã đọc,
           lịch ôn tập). Lượt xem trang <strong>không</strong> gắn với danh tính của bạn.</p>
         <button type="button" class="btn-danger" data-acct-delete>Xoá tài khoản &amp; toàn bộ dữ liệu</button>
       </section>
@@ -146,7 +146,7 @@ export function renderPrivacyPage(o) {
       <strong>mã định danh (sub), địa chỉ email, tên, và ảnh đại diện</strong>. Chúng tôi dùng các
       thông tin này chỉ để:</p>
     <ul>
-      <li>Đồng bộ tiến độ học của bạn (câu đã thuộc, lịch ôn tập) giữa các thiết bị;</li>
+      <li>Đồng bộ tiến độ học của bạn (câu đã đọc, lịch ôn tập) giữa các thiết bị;</li>
       <li>Hiển thị tên bạn chọn trên bảng xếp hạng — <strong>chỉ khi bạn tự bật</strong>;</li>
       <li>Xác định quyền truy cập nội dung premium (nếu bạn được cấp).</li>
     </ul>

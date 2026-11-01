@@ -30,7 +30,7 @@ ${o.keywords ? `<meta name="keywords" content="${esc(o.keywords)}">` : ''}
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,600&display=swap">
 <link rel="stylesheet" href="${o.root}assets/styles.css">
 <link rel="sitemap" type="application/xml" href="${o.root}sitemap.xml">
-<script>(function(){document.documentElement.className+=' has-js';try{var t=localStorage.getItem('iv-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+<script>(function(){var r=document.documentElement;r.className+=' has-js qa-compact';try{var t=localStorage.getItem('iv-theme');if(t)r.dataset.theme=t;if(localStorage.getItem('iv-focus')==='1')r.classList.add('is-focus');}catch(e){}})();</script>
 <script>window.IV_ROOT=${JSON.stringify(o.root || '')};</script>
 ${o.analyticsUrl ? `<script>window.IV_ANALYTICS=${JSON.stringify(o.analyticsUrl)};</script>` : ''}
 ${o.googleClientId ? `<script>window.IV_GOOGLE_CLIENT_ID=${JSON.stringify(o.googleClientId)};</script>` : ''}
@@ -83,8 +83,13 @@ export function footer(root) {
 
 /* Lắp trang hoàn chỉnh — root là tiền tố tương đối ("" cho trang chủ, "../" cho trang chủ đề) */
 export function page({ head: h, body, root = '', scripts = [] }) {
+  /* enhance.js tải lỗi thì trả lại trang mở đầy đủ: nội dung không được phụ thuộc vào JS */
+  const fallback = `document.documentElement.classList.remove('qa-compact','is-focus')`;
   const s = ['assets/enhance.js', 'assets/auth.js', ...scripts]
-    .map((src) => `<script src="${root}${src}" defer></script>`)
+    .map(
+      (src) =>
+        `<script src="${root}${src}" defer${src === 'assets/enhance.js' ? ` onerror="${fallback}"` : ''}></script>`
+    )
     .join('\n');
   return `<!doctype html>
 <html lang="vi">

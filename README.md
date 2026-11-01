@@ -10,13 +10,13 @@ Mỗi câu gồm bốn phần: **Trả lời** (chi tiết) · **Bản chất** 
 Nội dung tiếng Việt, giữ nguyên thuật ngữ kỹ thuật tiếng Anh.
 
 Trang được **render sẵn thành HTML tĩnh** (tối ưu SEO), hoạt động **không cần JavaScript**;
-JavaScript chỉ thêm tiện ích (lọc, đánh dấu "đã thuộc", thu gọn, giao diện sáng/tối).
+JavaScript chỉ thêm tiện ích (lọc, đánh dấu "đã đọc", thu gọn, giao diện sáng/tối).
 
 Có trang **`/luyen-tap/`** kiểu LeetCode: duyệt & lọc toàn bộ 702 câu theo chủ đề / trạng thái,
 rồi vào **phiên luyện chủ động** — hiện câu hỏi, tự nhớ lại, mở đáp án, tự chấm
-(Không nhớ / Khó / Đã thuộc). Câu chưa chắc được lặp lại sớm hơn (spaced repetition).
+(Không nhớ / Khó / Nhớ rõ). Câu chưa chắc được lặp lại sớm hơn (spaced repetition).
 Tiến độ (`iv-srs`, `iv-questions-learned`, `iv-practice-log`) lưu ở localStorage, đồng bộ với nút
-"đã thuộc" trên trang chủ đề. Mỗi trang chủ đề có nút *🎯 Luyện tập chủ đề* dẫn tới
+"đã đọc" trên trang chủ đề. Mỗi trang chủ đề có nút *🎯 Luyện tập chủ đề* dẫn tới
 `/luyen-tap/?topic=<id>`.
 
 **Bài tập code SQL**: câu SQL phù hợp có thêm `code: { lang:'sql', prompt, tables, datasets, starter,
@@ -89,9 +89,9 @@ cho Worker — xem [`analytics/README.md`](analytics/README.md) phần **C**. Ch
 "Đăng nhập" tự ẩn, site chạy y như cũ.
 
 Khi bật, người dùng đăng nhập Google (sau **màn hình đồng ý** nêu rõ dữ liệu được lưu) để:
-- Đồng bộ tiến độ luyện tập (`iv-srs` / câu đã thuộc / log) giữa các thiết bị — merge kiểu union,
+- Đồng bộ tiến độ luyện tập (`iv-srs` / câu đã đọc / log) giữa các thiết bị — merge kiểu union (trừ chủ đề vừa "Bỏ đánh dấu tất cả"),
   đẩy lên server sau mỗi lần chấm (debounce 2.5s).
-- Trang **`/tai-khoan/`**: dashboard cá nhân (đã thuộc / cần ôn / streak / theo chủ đề), cài đặt
+- Trang **`/tai-khoan/`**: dashboard cá nhân (đã đọc / cần ôn / streak / theo chủ đề), cài đặt
   tên hiển thị, **xoá tài khoản + toàn bộ dữ liệu**.
 - Trang **`/bang-xep-hang/`**: top 7 ngày, chỉ hiện người tự bật.
 - **`/privacy/`**: chính sách bảo mật (bắt buộc cho OAuth consent screen của Google).
