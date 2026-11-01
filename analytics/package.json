@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Worker + D1 thống kê truy cập cho Interview Vault",
+  "description": "Worker + D1 cho đăng nhập và đồng bộ tiến độ của Interview Vault",
   "scripts": {
     "test": "node test.mjs",
     "dev": "wrangler dev",

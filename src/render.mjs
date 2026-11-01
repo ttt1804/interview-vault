@@ -234,84 +234,6 @@ ${footer('../')}`;
   });
 }
 
-/* Trang thống kê /stats — khung tĩnh, assets/stats.js nạp số liệu từ Worker */
-export function renderStatsPage({ topics, siteUrl, analyticsUrl, googleClientId }) {
-  const url = `${siteUrl}stats/`;
-  const body = `${header({ root: '../', topics, current: null })}
-<main id="main" class="stats-page">
-  <div class="wrap stats-wrap">
-    ${breadcrumb([{ name: 'Trang chủ', href: '../' }, { name: 'Thống kê' }])}
-    <h1 class="topic-h1"><span class="topic-h1-icon" aria-hidden="true">📈</span>Thống kê truy cập</h1>
-
-    <p class="stats-state" data-stats-state hidden></p>
-
-    <div class="stats-tiles" data-stats-tiles hidden>
-      <div class="stat-tile"><b data-k="totalViews">—</b><span>Tổng lượt truy cập</span></div>
-      <div class="stat-tile"><b data-k="totalVisitors">—</b><span>Khách duy nhất</span></div>
-      <div class="stat-tile"><b data-k="returningVisitors">—</b><span>Khách quay lại <em data-k="returningPct"></em></span></div>
-      <div class="stat-tile"><b data-k="totalIps">—</b><span>Địa chỉ IP duy nhất</span></div>
-      <div class="stat-tile"><b data-k="todayViews">—</b><span>Truy cập hôm nay</span></div>
-      <div class="stat-tile"><b data-k="todayIps">—</b><span>IP hôm nay</span></div>
-    </div>
-
-    <section class="stats-section" data-stats-chart-wrap hidden>
-      <h2>30 ngày gần nhất</h2>
-      <div class="stats-chart" data-stats-chart></div>
-      <p class="stats-legend">Cột = lượt truy cập/ngày. Rê chuột để xem số khách.</p>
-    </section>
-
-    <section class="stats-section" data-stats-topics-wrap hidden>
-      <h2>Lượt truy cập theo chủ đề</h2>
-      <div class="stats-bars" data-stats-topics></div>
-    </section>
-
-    <section class="stats-section" data-stats-countries-wrap hidden>
-      <h2>Lượt truy cập theo quốc gia</h2>
-      <div class="stats-bars" data-stats-countries></div>
-      <p class="stats-legend">Quốc gia do Cloudflare suy ra từ địa chỉ IP.</p>
-    </section>
-
-    <section class="stats-section" data-stats-ips-wrap hidden>
-      <h2>Địa chỉ IP truy cập</h2>
-      <div class="stats-table-wrap">
-        <table class="stats-table">
-          <thead>
-            <tr>
-              <th scope="col" class="num">#</th>
-              <th scope="col">Địa chỉ IP</th>
-              <th scope="col">Vị trí</th>
-              <th scope="col" class="num"><button type="button" class="stats-sort is-active" data-sort="views">Lượt</button></th>
-              <th scope="col">Lần đầu</th>
-              <th scope="col" class="num"><button type="button" class="stats-sort" data-sort="lastSeen">Gần nhất</button></th>
-            </tr>
-          </thead>
-          <tbody data-stats-ips></tbody>
-        </table>
-      </div>
-      <p class="stats-legend" data-stats-ip-note></p>
-    </section>
-
-    <p class="stats-meta muted" data-stats-meta hidden></p>
-  </div>
-</main>
-${footer('../')}`;
-
-  return page({
-    root: '../',
-    scripts: ['assets/stats.js'],
-    head: head({
-      title: 'Thống kê truy cập — Interview Vault',
-      description: 'Số liệu truy cập của Interview Vault: tổng lượt truy cập, khách duy nhất, khách quay lại, 30 ngày gần nhất, và thống kê theo địa chỉ IP.',
-      canonical: url,
-      root: '../',
-      robots: 'noindex, follow',
-      analyticsUrl,
-      googleClientId,
-    }),
-    body,
-  });
-}
-
 /* Dữ liệu cho trình luyện tập: nội dung đầy đủ mỗi câu, tải on-demand (luyen-tap/questions.json) */
 export function practiceData(questions) {
   return JSON.stringify(
@@ -527,7 +449,6 @@ export function renderHub({ topics, counts, total, siteUrl, analyticsUrl, google
         <span><b>${topics.length}</b> chủ đề</span>
         <span><b>3</b> phần / câu</span>
       </div>
-      <p class="hero-views" data-views hidden>👁 <b class="js-view-count">—</b> lượt truy cập</p>
     </div>
   </section>
   <section class="wrap topic-grid-section" aria-label="Chủ đề">
@@ -574,7 +495,7 @@ ${footer('')}`;
 export function renderSitemap({ topics, siteUrl }) {
   const now = new Date().toISOString().slice(0, 10);
   const urls = [
-    siteUrl, `${siteUrl}luyen-tap/`, `${siteUrl}bang-xep-hang/`, `${siteUrl}privacy/`,
+    siteUrl, `${siteUrl}luyen-tap/`, `${siteUrl}privacy/`,
     ...topics.map((t) => `${siteUrl}${t.id}/`),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>

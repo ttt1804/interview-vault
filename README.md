@@ -40,66 +40,34 @@ npm run serve
 
 Đã có sẵn workflow `.github/workflows/deploy.yml` (build bằng Node, deploy qua GitHub Pages).
 
-1. Tạo một repo trên GitHub (ví dụ `iv-process`), rồi:
+1. Tạo một repo trên GitHub (ví dụ `interview-vault`), rồi:
    ```bash
-   git remote add origin https://github.com/<username>/iv-process.git
+   git remote add origin https://github.com/<username>/interview-vault.git
    git push -u origin main
    ```
 2. Trên GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. Mỗi lần push lên nhánh `main`, workflow tự build và deploy.
-   URL: `https://<username>.github.io/iv-process/`
+   URL: `https://<username>.github.io/interview-vault/`
    (workflow tự lấy đúng base URL, không cần sửa gì).
 
 > Nếu muốn dùng làm **user site** (`<username>.github.io`): đặt tên repo là `<username>.github.io`
 > — mọi thứ vẫn chạy, base URL thành `https://<username>.github.io/`.
 
-## Thống kê truy cập (tuỳ chọn)
-
-Backend riêng trong [`analytics/`](analytics/) — **Cloudflare Worker + D1** (SQLite), miễn phí.
-Xem [`analytics/README.md`](analytics/README.md) để set up database và deploy.
-
-Sau khi deploy Worker, đặt **repo variable** `ANALYTICS_URL` = URL Worker
-(*Settings → Secrets and variables → Actions → Variables*) rồi build lại (push hoặc re-run Actions).
-
-- Có `ANALYTICS_URL`: footer hiện **số thật**, thêm trang **`/stats`** (tổng lượt truy cập, khách duy
-  nhất, khách quay lại, biểu đồ 30 ngày, lượt truy cập theo chủ đề, và bảng địa chỉ IP).
-- Chưa có: footer dùng bộ đếm tạm phía client, `/stats` báo "chưa cấu hình".
-
-**Một lượt truy cập = một phiên**: `enhance.js` chỉ gửi `/collect` khi phiên mới — phiên hết hạn sau
-**30 phút không hoạt động** (cửa sổ trượt, chung mọi tab, mốc lưu ở `localStorage['iv-ses']`).
-Tải lại trang / mở nhiều tab trong phiên không cộng thêm. "Khách duy nhất" và "khách quay lại"
-vẫn tính theo `iv-vid` + ngày như cũ.
-
-Visitor id là chuỗi ngẫu nhiên trong `localStorage` (**không cookie**); tôn trọng Do Not Track
-(bật DNT thì client không gửi gì cả); bot bị lọc theo User-Agent.
-
-**Thống kê theo địa chỉ IP**: Worker lưu IP khách (`CF-Connecting-IP`) vào bảng `visitor_ip` cùng
-quốc gia/thành phố Cloudflare suy ra, số phiên, lần đầu & lần gần nhất. Trang `/stats` hiển thị
-**công khai** bảng 100 IP nhiều lượt nhất (sắp theo lượt hoặc theo thời gian gần nhất) và biểu đồ
-theo quốc gia.
-
-> ⚠️ IP là **dữ liệu cá nhân** theo GDPR và trang `/stats` không có xác thực — ai biết URL đều xem
-> được. `/privacy/` đã ghi rõ điều này. Muốn giảm mức nhạy cảm: gọi `maskIp()` (có sẵn trong
-> `analytics/src/analytics.js`) trước khi ghi DB để che 8 bit cuối (IPv4) / giữ /64 (IPv6).
-
 ## Đăng nhập Google (tuỳ chọn)
 
-Dùng chung Worker `analytics/`. Đặt **repo variable** `GOOGLE_CLIENT_ID` + secret `SESSION_SECRET`
+Backend riêng trong [`analytics/`](analytics/) — **Cloudflare Worker + D1**. Đặt **repo variable** `ANALYTICS_URL`
+= URL Worker, `GOOGLE_CLIENT_ID` + secret `SESSION_SECRET`
 cho Worker — xem [`analytics/README.md`](analytics/README.md) phần **C**. Chưa cấu hình thì nút
 "Đăng nhập" tự ẩn, site chạy y như cũ.
 
 Khi bật, người dùng đăng nhập Google (sau **màn hình đồng ý** nêu rõ dữ liệu được lưu) để:
 - Đồng bộ tiến độ luyện tập (`iv-srs` / câu đã đọc / log) giữa các thiết bị — merge kiểu union (trừ chủ đề vừa "Bỏ đánh dấu tất cả"),
   đẩy lên server sau mỗi lần chấm (debounce 2.5s).
-- Trang **`/tai-khoan/`**: dashboard cá nhân (đã đọc / cần ôn / streak / theo chủ đề), cài đặt
-  tên hiển thị, **xoá tài khoản + toàn bộ dữ liệu**.
-- Trang **`/bang-xep-hang/`**: top 7 ngày, chỉ hiện người tự bật.
+- Trang **`/tai-khoan/`**: dashboard cá nhân (đã đọc / cần ôn / streak / theo chủ đề),
+  **xoá tài khoản + toàn bộ dữ liệu**.
 - **`/privacy/`**: chính sách bảo mật (bắt buộc cho OAuth consent screen của Google).
 - Quyền **premium**: đường ống entitlement có sẵn (`tier` trong `/me`), cấp thủ công qua
   `POST /admin/grant`. Chưa có nội dung premium.
-
-Lượt xem trang và địa chỉ IP **không** gắn với danh tính người đăng nhập — hai phần dữ liệu này
-tách biệt hoàn toàn trong database.
 
 ## SEO
 
@@ -122,18 +90,16 @@ src/
   format.mjs            # markdown-lite -> HTML, slug, hash id, strip
   highlight.mjs         # tô màu cú pháp lúc build cho khối demo (tokenizer tự viết)
   templates.mjs         # <head> đầy đủ SEO, header, footer, breadcrumb, khung trang
-  render.mjs            # sinh trang chủ, trang chủ đề, /stats, /luyen-tap, sitemap, 404
-  render-user.mjs      # sinh /tai-khoan, /bang-xep-hang, /privacy
+  render.mjs            # sinh trang chủ, trang chủ đề, /luyen-tap, sitemap, 404
+  render-user.mjs      # sinh /tai-khoan, /privacy
   build.mjs             # đọc data -> kiểm tra toàn vẹn -> ghi dist/  (env ANALYTICS_URL, GOOGLE_CLIENT_ID)
   serve.mjs             # máy chủ tĩnh tối giản để xem thử
 assets/
   styles.css           # thiết kế (IBM Plex Sans/Mono + Lora; màu theo chủ đề; sáng/tối)
   practice.js          # trang /luyen-tap: lọc + phiên luyện + spaced repetition
-  enhance.js            # tiện ích client + gửi lượt xem (không bắt buộc)
+  enhance.js            # tiện ích client (không bắt buộc)
   auth.js              # đăng nhập Google + modal đồng ý + đồng bộ tiến độ
   account.js           # trang /tai-khoan
-  leaderboard.js       # trang /bang-xep-hang
-  stats.js             # nạp & vẽ số liệu cho trang /stats
 tools/
   add-demos.mjs        # chèn field demo hàng loạt từ file patch (không tham gia build)
 analytics/             # Cloudflare Worker + D1 — thống kê truy cập + IP + tài khoản Google (deploy riêng)

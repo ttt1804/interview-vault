@@ -1,84 +1,108 @@
 /* Kiểm chứng Worker mà KHÔNG cần deploy lên Cloudflare.
-   Chạy schema.sql + collect() + stats() trên SQLite trong bộ nhớ (node:sqlite,
-   Node 22+) qua một shim tối giản của API D1.
+   Chạy schema.sql + Worker thật trên SQLite trong bộ nhớ (sql.js có sẵn trong assets/vendor)
+   qua một shim tối giản của API D1.
 
    Chạy:  node analytics/test.mjs          (từ gốc repo hoặc từ analytics/)
    Thoát mã 1 nếu có assertion sai — dùng được trong CI. */
-import { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { webcrypto } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { collect, stats } from './src/analytics.js';
+
+/* Node cũ chưa có sẵn các global mà Worker dùng */
+globalThis.crypto ??= webcrypto;
+globalThis.Response ??= class {
+  constructor(body, init = {}) { this.body = body; this.status = init.status ?? 200; this.headers = init.headers; }
+  async json() { return JSON.parse(this.body); }
+};
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const db = new DatabaseSync(':memory:');
+const { default: worker } = await import('./src/worker.js');
+const { signSession } = await import('./src/auth.js');
+
+/* package.json gốc đặt type=module nên không require() được file UMD này */
+const VENDOR = join(HERE, '..', 'assets', 'vendor');
+const mod = { exports: {} };
+new Function('module', 'exports', 'require', '__dirname', readFileSync(join(VENDOR, 'sql-wasm.js'), 'utf8'))(
+  mod, mod.exports, createRequire(import.meta.url), VENDOR
+);
+const SQL = await mod.exports({ wasmBinary: readFileSync(join(VENDOR, 'sql-wasm.wasm')) });
+const db = new SQL.Database();
 db.exec(readFileSync(join(HERE, 'schema.sql'), 'utf8'));
 
-/* ---- shim tối giản của D1: chỉ đủ cho analytics.js ---- */
+/* ---- shim tối giản của D1 ---- */
+function rows(sql, params) {
+  const st = db.prepare(sql);
+  st.bind(params);
+  const out = [];
+  while (st.step()) out.push(st.getAsObject());
+  st.free();
+  return out;
+}
 const wrap = (sql, params = []) => ({
   bind: (...args) => wrap(sql, args),
-  all() {
-    const st = db.prepare(sql);
-    if (/^\s*(select|with)/i.test(sql) || /returning/i.test(sql)) {
-      return { results: st.all(...params), success: true };
-    }
-    st.run(...params);
-    return { results: [], success: true };
-  },
+  first: async () => rows(sql, params)[0] ?? null,
+  all: async () => ({ results: rows(sql, params), success: true }),
+  run: async () => { rows(sql, params); return { success: true }; },
 });
 const env = {
   ALLOW_ORIGIN: '',
-  DB: { prepare: (sql) => wrap(sql), batch: async (stmts) => stmts.map((s) => s.all()) },
+  SESSION_SECRET: 'test-secret',
+  DB: { prepare: (sql) => wrap(sql), batch: async (stmts) => Promise.all(stmts.map((s) => s.run())) },
 };
 
-const req = (ip, vid, topic, geo = {}, ua = 'Mozilla/5.0 Chrome/120') => ({
-  headers: { get: (k) => ({ 'user-agent': ua, 'cf-connecting-ip': ip })[k.toLowerCase()] ?? null },
-  cf: geo,
-  text: async () => JSON.stringify({ v: vid, t: topic }),
-});
+const call = (method, path, { token, body } = {}) => worker.fetch({
+  method,
+  url: 'https://worker.test' + path,
+  headers: { get: (k) => (k.toLowerCase() === 'authorization' && token ? 'Bearer ' + token : null) },
+  text: async () => JSON.stringify(body ?? {}),
+}, env);
 
 let failed = 0;
-const ok = (label, cond) => {
-  if (!cond) failed++;
-  console.log(`${cond ? '  ok  ' : '  SAI '} ${label}`);
-};
+function check(name, ok, detail) {
+  if (ok) { console.log('ok   ' + name); return; }
+  failed++;
+  console.error('FAIL ' + name + (detail === undefined ? '' : ' -> ' + JSON.stringify(detail)));
+}
+const count = (table) => rows('SELECT COUNT(*) AS n FROM ' + table, [])[0].n;
 
-/* ---- collect ---- */
-await collect(req('14.161.29.7', 'vid-aaaaaaaa', 'java', { country: 'VN', city: 'Hanoi' }), env);
-await collect(req('14.161.29.7', 'vid-aaaaaaaa', 'kafka', { country: 'VN', city: 'Hanoi' }), env);
-await collect(req('14.161.29.7', 'vid-bbbbbbbb', 'sql', { country: 'VN', city: 'Hanoi' }), env);
-await collect(req('203.0.113.9', 'vid-cccccccc', 'hub', { country: 'SG', city: 'Singapore' }), env);
-await collect(req('2405:4802:1f2:a10::1', 'vid-dddddddd', 'redis', { country: 'VN' }), env);
-await collect(req('8.8.8.8', 'vid-eeeeeeee', 'aws', {}), env);
-await collect(req('không-phải-ip', 'vid-ffffffff', 'java', {}), env);          // IP rác
-await collect(req('1.2.3.4', 'vid-gggggggg', 'java', {}, 'Googlebot/2.1'), env); // bot
+/* ---- thống kê và bảng xếp hạng đã gỡ ---- */
+for (const [m, p] of [['GET', '/stats'], ['POST', '/collect'], ['GET', '/leaderboard'], ['POST', '/settings']]) {
+  const r = await call(m, p);
+  check(m + ' ' + p + ' trả 404', r.status === 404, r.status);
+}
+const tables = rows("SELECT name FROM sqlite_master WHERE type='table'", []).map((t) => t.name);
+check('schema không còn bảng thống kê',
+  !tables.some((t) => ['visitor', 'visitor_day', 'daily', 'daily_topic', 'visitor_ip', 'ip_day'].includes(t)), tables);
 
-const ips = db.prepare('SELECT ip, views, country FROM visitor_ip ORDER BY views DESC, ip').all();
-ok('chỉ 4 IP hợp lệ được lưu (IP rác và bot bị loại)', ips.length === 4);
-ok('IP nhiều lượt nhất đúng', ips[0].ip === '14.161.29.7' && ips[0].views === 3);
-ok('IPv6 lưu được', ips.some((r) => r.ip === '2405:4802:1f2:a10::1'));
-ok('không có geo -> country NULL', ips.find((r) => r.ip === '8.8.8.8').country === null);
-ok('ip_day: mỗi IP một dòng trong ngày', db.prepare('SELECT COUNT(*) c FROM ip_day').get().c === 4);
-ok('lượt xem vẫn đếm cả khi không lấy được IP',
-   db.prepare('SELECT SUM(views) s FROM daily').get().s === 7);
+/* ---- route còn lại ---- */
+check('GET /health', (await call('GET', '/health')).status === 200);
+check('GET /me chưa đăng nhập trả 401', (await call('GET', '/me')).status === 401);
 
-/* ---- stats ---- */
-const p = await stats(env);
-ok('totalIps = 4', p.totalIps === 4);
-ok('today.ips = 4', p.today.ips === 4);
-ok('topIps sắp giảm dần theo lượt',
-   p.topIps.every((r, i, a) => i === 0 || a[i - 1].views >= r.views));
-ok('topIps đủ trường cho bảng', !!(p.topIps[0].ip && p.topIps[0].firstDay && p.topIps[0].lastSeen));
-ok('topCountries gộp đúng (VN dẫn đầu)',
-   p.topCountries[0].country === 'VN' && p.topCountries[0].views === 4);
-ok('quốc gia không rõ gộp vào "??"', p.topCountries.some((c) => c.country === '??'));
-ok('last30Days có số IP mỗi ngày', p.last30Days.at(-1).ips === 4);
+rows("INSERT INTO app_user (sub, email, name, picture, created_day, last_seen_day) VALUES ('u1', 'a@test', 'A', '', '2026-01-01', '2026-01-01')", []);
+const token = await signSession({ sub: 'u1', name: 'A', picture: '' }, env.SESSION_SECRET);
 
-/* ---- cron dọn ip_day ---- */
-db.prepare("INSERT INTO ip_day (ip, day) VALUES ('9.9.9.9', '2020-01-01')").run();
-db.prepare('DELETE FROM ip_day WHERE day < ?')
-  .run(new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10));
-ok('cron xoá ip_day cũ, giữ dòng mới', db.prepare('SELECT COUNT(*) c FROM ip_day').get().c === 4);
+const me = await (await call('GET', '/me', { token })).json();
+check('GET /me trả hồ sơ', me.ok && me.user.name === 'A', me);
+check('hồ sơ không còn trường bảng xếp hạng', me.user && !('displayName' in me.user) && !('showOnLeaderboard' in me.user), me.user);
 
-console.log(failed ? `\n✗ ${failed} assertion sai` : '\n✓ Toàn bộ assertion pass');
-process.exit(failed ? 1 : 0);
+const data = { srs: {}, learned: { 'java-a': 1 }, log: { '2026-01-01': 3 }, resets: { kafka: 100 } };
+const saved = await (await call('POST', '/progress', { token, body: { data } })).json();
+check('POST /progress', saved.ok && saved.rev === 1, saved);
+const got = await (await call('GET', '/progress', { token })).json();
+check('GET /progress giữ nguyên blob, kể cả resets', JSON.stringify(got.data) === JSON.stringify(data), got);
+check('POST /progress không ghi user_activity_day', count('user_activity_day') === 0);
+
+/* ---- dữ liệu cũ: cron dọn dần, xoá tài khoản xoá sạch ---- */
+rows("INSERT INTO user_activity_day (sub, day, reviews) VALUES ('old', '2000-01-01', 5), ('u1', '2999-01-01', 5)", []);
+await worker.scheduled({}, env, { waitUntil: (p) => p });
+check('cron dọn dữ liệu quá 90 ngày', rows("SELECT * FROM user_activity_day WHERE sub = 'old'", []).length === 0);
+
+const del = await (await call('POST', '/account/delete', { token })).json();
+check('POST /account/delete', del.ok, del);
+check('xoá sạch dữ liệu của người dùng',
+  count('app_user') === 0 && count('user_progress') === 0 && count('user_activity_day') === 0);
+
+if (failed) { console.error(failed + ' lỗi'); process.exit(1); }
+console.log('Tất cả đều qua.');
