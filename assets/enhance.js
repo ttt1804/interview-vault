@@ -223,7 +223,11 @@
       q.textContent = '';
       q.appendChild(toggle);
       toggle.addEventListener('click', function () {
-        if (art === current) { paintOpen(art, false); current = null; paintPosition(); return; }
+        if (art === current) {
+          /* chế độ tập trung chỉ hiện câu đang mở: đóng nó là màn hình trống */
+          if (root.classList.contains('is-focus')) return;
+          paintOpen(art, false); current = null; paintPosition(); return;
+        }
         openQuestion(art, { remember: true, scroll: true });
       });
     }
@@ -383,6 +387,12 @@
       var first = unread.filter(function (a) { return articles.indexOf(a) > from; })[0] || unread[0];
       if (first) openQuestion(first);
     }
+    /* chế độ tập trung luôn phải có một câu: đã đọc hết thì mở câu đầu, không còn câu nào để hiện thì tạm thoát (không đổi lựa chọn đã lưu) */
+    if (!current && root.classList.contains('is-focus')) {
+      var shown = shownArticles()[0];
+      if (shown) openQuestion(shown);
+      else root.classList.remove('is-focus');
+    }
   }
   if (input) input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(applyVisibility, 140); });
 
@@ -441,6 +451,8 @@
 
   /* ---- Chế độ tập trung: chỉ còn một câu trên màn hình ---- */
   function setFocus(on, persist) {
+    /* bộ lọc đang không khớp câu nào thì không có gì để tập trung vào */
+    if (on && !current && !shownArticles().length) return;
     root.classList.toggle('is-focus', on);
     if (persist !== false) {
       try { if (on) localStorage.setItem('iv-focus', '1'); else localStorage.removeItem('iv-focus'); } catch (e) {}

@@ -319,6 +319,9 @@ kbd { display: none; font-family: var(--font-mono); font-size: 10.5px; font-weig
   .is-focus .topic-page .cat { margin-bottom: 0; }
   .is-focus .topic-page .qa { box-shadow: none; }
   .is-focus .topic-page .qa-permalink { display: none; }
+  /* câu đang mở không đóng được trong chế độ này nên tiêu đề không trông như nút */
+  .is-focus .topic-page .qa-q, .is-focus .topic-page .qa-toggle { cursor: text; }
+  .is-focus .topic-page .qa-toggle:hover { color: inherit; }
   .is-focus .topic-page .focus-bar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     position: sticky; top: 0; z-index: 30; padding: 8px max(16px, calc((100% - 760px) / 2));
