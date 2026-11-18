@@ -112,7 +112,7 @@
       }
       function clear() { live.textContent = ''; }
       return {
-        reset: function () { clear(); note.textContent = 'Object mới luôn cấp phát vào Eden'; },
+        reset: function () { clear(); note.textContent = 'Object mới thường vào Eden; object rất lớn có thể vào thẳng Old'; },
         steps: [
           { label: 'Ứng dụng tạo nhiều object mới → lấp đầy Eden', run: function () { clear(); dots('eden', 26); note.textContent = 'Eden gần đầy'; } },
           { label: 'Minor GC: copy object CÒN SỐNG sang Survivor, xoá phần còn lại (rất nhanh)', run: function () { clear(); dots('s0', 5); note.textContent = 'Đa số object "chết trẻ" → quét Eden nhỏ rất rẻ'; } },

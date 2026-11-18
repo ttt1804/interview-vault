@@ -114,7 +114,7 @@ SS.addQuestions('java', [
     '</dependency>\n' +
     '```\n' +
     '\n' +
-    'Một dòng đó kéo về `spring-webmvc`, Tomcat embedded, Jackson, validation — tất cả ở những phiên bản đã được kiểm định là chạy được với nhau. Và bạn không ghi số phiên bản, vì BOM của Boot đã quyết.\n' +
+    'Một dòng đó kéo về `spring-webmvc`, Tomcat embedded, Jackson — tất cả ở những phiên bản đã được kiểm định là chạy được với nhau. Và bạn không ghi số phiên bản, vì BOM của Boot đã quyết.\n' +
     '\n' +
     '## 6. Embedded server: server thành dependency\n' +
     '\n' +
@@ -619,11 +619,11 @@ SS.addQuestions('java', [
     '\n' +
     '| Starter | Kéo về | Dùng khi |\n' +
     '| --- | --- | --- |\n' +
-    '| `spring-boot-starter-web` | Spring MVC, Tomcat, Jackson, validation | REST API kiểu servlet |\n' +
+    '| `spring-boot-starter-web` | Spring MVC, Tomcat, Jackson | REST API kiểu servlet |\n' +
     '| `spring-boot-starter-webflux` | Spring WebFlux, Netty, `WebClient` | API phi blocking, hoặc chỉ cần WebClient |\n' +
     '| `spring-boot-starter-data-jpa` | Hibernate, Spring Data JPA, HikariCP | Truy cập DB quan hệ qua JPA |\n' +
     '| `spring-boot-starter-security` | Spring Security | Xác thực, phân quyền |\n' +
-    '| `spring-boot-starter-validation` | Hibernate Validator | `@Valid` khi không dùng starter-web |\n' +
+    '| `spring-boot-starter-validation` | Hibernate Validator | `@Valid`, `@Validated`; từ Boot 2.3 phải thêm riêng |\n' +
     '| `spring-boot-starter-actuator` | Actuator | Health, metrics, vận hành |\n' +
     '| `spring-boot-starter-test` | JUnit 5, Mockito, AssertJ, Spring Test | Test, thường ở scope `test` |\n' +
     '\n' +
@@ -722,7 +722,6 @@ SS.addQuestions('java', [
         { label: 'spring-webmvc' },
         { label: 'spring-boot-starter-tomcat', note: 'embedded server' },
         { label: 'spring-boot-starter-json', note: 'Jackson' },
-        { label: 'validation' },
       ],
     },
   },
@@ -732,7 +731,7 @@ SS.addQuestions('java', [
       title: "Starter chỉ là một POM rỗng gom sẵn dependency",
       code:
         "<!-- Một dòng này kéo theo: spring-web, spring-webmvc, jackson,\n" +
-        "     tomcat nhúng, validation... với version đã được kiểm thử khớp nhau -->\n" +
+        "     tomcat nhúng... với version đã được kiểm thử khớp nhau -->\n" +
         "<dependency>\n" +
         "  <groupId>org.springframework.boot</groupId>\n" +
         "  <artifactId>spring-boot-starter-web</artifactId>\n" +
@@ -798,15 +797,15 @@ SS.addQuestions('java', [
     '2. `SPRING_APPLICATION_JSON` — cả khối JSON nhét trong một biến môi trường\n' +
     '3. Biến môi trường OS và system properties (`-Dserver.port=9000`)\n' +
     '4. `application-{profile}.yml` **ngoài** jar\n' +
-    '5. `application-{profile}.yml` **trong** jar\n' +
-    '6. `application.yml` **ngoài** jar\n' +
+    '5. `application.yml` **ngoài** jar\n' +
+    '6. `application-{profile}.yml` **trong** jar\n' +
     '7. `application.yml` **trong** jar\n' +
     '8. `@PropertySource` trên `@Configuration`\n' +
     '9. Default properties đặt bằng `SpringApplication.setDefaultProperties`\n' +
     '\n' +
     'Hai điều đáng chú ý ở bảng này:\n' +
     '\n' +
-    'File có profile luôn thắng file không profile. Nên `application-prod.yml` ghi đè `application.yml`, và đó chính là cơ chế bạn dùng hằng ngày.\n' +
+    'Trong cùng một nhóm vị trí, file có profile thắng file không profile. Nên `application-prod.yml` trong jar ghi đè `application.yml` trong jar, và đó chính là cơ chế bạn dùng hằng ngày.\n' +
     '\n' +
     'File ngoài jar luôn thắng file trong jar. Đây là cách vá cấu hình ở prod mà không cần build lại.\n' +
     '\n' +
@@ -927,13 +926,13 @@ SS.addQuestions('java', [
     'một artifact chạy được mọi môi trường\n' +
     '```\n' +
     '\n' +
-    'Muốn kiểm chứng lúc chạy, gọi `/actuator/env` sẽ thấy đúng giá trị cuối cùng cùng nguồn đã cấp nó — cách nhanh nhất để kết thúc mọi tranh cãi "sao nó lấy giá trị này".\n' +
+    'Muốn kiểm chứng lúc chạy, gọi `/actuator/env` sẽ thấy nguồn đã cấp từng property; giá trị mặc định bị che, muốn xem phải bật `show-values` có kiểm soát — cách nhanh nhất để kết thúc mọi tranh cãi "sao nó lấy giá trị này".\n' +
     '\n' +
     'Từ đây dẫn thẳng tới câu hỏi kế: khi khối cấu hình lớn dần, bạn nên tiêm từng giá trị bằng `@Value` hay bind cả nhóm bằng `@ConfigurationProperties`?',
   essence:
     'Nguyên tắc gói trong một câu: nguồn nào **gần lúc chạy và gần môi trường thật** hơn thì thắng, nên dòng lệnh ghi đè biến môi trường, biến môi trường ghi đè file trong jar. Nhờ vậy một artifact duy nhất chạy được ở mọi môi trường mà không phải build lại.',
   example:
-    'Image Docker được build sẵn với `application.yml` mặc định thiên về dev. Khi deploy prod, Kubernetes bơm `SPRING_PROFILES_ACTIVE=prod` từ Deployment và `SPRING_DATASOURCE_PASSWORD` từ Secret, ghi đè giá trị nằm trong jar mà không cần rebuild. Nhờ đó chính cái image đã kiểm thử ở staging là cái chạy ở production, và khi nghi ngờ thì gọi `/actuator/env` để xem giá trị cuối cùng đến từ nguồn nào.',
+    'Image Docker được build sẵn với `application.yml` mặc định thiên về dev. Khi deploy prod, Kubernetes bơm `SPRING_PROFILES_ACTIVE=prod` từ Deployment và `SPRING_DATASOURCE_PASSWORD` từ Secret, ghi đè giá trị nằm trong jar mà không cần rebuild. Nhờ đó chính cái image đã kiểm thử ở staging là cái chạy ở production, và khi nghi ngờ thì gọi `/actuator/env` để xem property đến từ nguồn nào.',
   viz: {
     type: 'layers',
     title: 'Ưu tiên nguồn cấu hình (trên ghi đè dưới)',
@@ -941,8 +940,10 @@ SS.addQuestions('java', [
       { name: 'Tham số dòng lệnh', tag: 'cao nhất', note: '--server.port=9000' },
       { name: 'SPRING_APPLICATION_JSON' },
       { name: 'Biến môi trường OS / -D system properties', note: 'cách ghi đè phổ biến trong K8s (relaxed binding)' },
-      { name: 'application-{profile}.yml', note: 'ngoài jar → trong jar' },
-      { name: 'application.yml', note: 'ngoài jar → trong jar' },
+      { name: 'application-{profile}.yml ngoài jar' },
+      { name: 'application.yml ngoài jar' },
+      { name: 'application-{profile}.yml trong jar' },
+      { name: 'application.yml trong jar' },
       { name: 'Default properties', tag: 'thấp nhất' },
     ],
   },
@@ -973,7 +974,7 @@ SS.addQuestions('java', [
         "#   spring.jpa.database_platform\n" +
         "#   SPRING_JPA_DATABASEPLATFORM    (dạng biến môi trường)\n" +
         "\n" +
-        "# Xem giá trị cuối cùng thực sự đang dùng và nó đến từ nguồn nào:\n" +
+        "# Xem property đến từ nguồn nào (giá trị mặc định bị che bằng ******):\n" +
         "curl localhost:8080/actuator/env/server.port",
     },
   ],
@@ -1044,7 +1045,7 @@ SS.addQuestions('java', [
     '| Tiêu chí | `@Value` | `@ConfigurationProperties` |\n' +
     '| --- | --- | --- |\n' +
     '| Phạm vi | Một giá trị | Cả một nhóm có prefix |\n' +
-    '| Kiểu phức tạp (`List`, `Map`, nested) | Rất vụng | Hỗ trợ tự nhiên |\n' +
+    '| Kiểu phức tạp (`Map`, nested) | Rất vụng | Hỗ trợ tự nhiên |\n' +
     '| Relaxed binding | Không đầy đủ | Đầy đủ |\n' +
     '| Validate cả nhóm | Không | `@Validated` + JSR-380 |\n' +
     '| Gợi ý trong IDE | Không | Có, qua annotation processor |\n' +
@@ -1054,7 +1055,7 @@ SS.addQuestions('java', [
     '\n' +
     '## 3. Kiểu dữ liệu: khác biệt lớn nhất trong thực tế\n' +
     '\n' +
-    '`@ConfigurationProperties` bind được những thứ mà `@Value` xử lý rất khổ sở:\n' +
+    '`@ConfigurationProperties` bind gọn cả một cấu trúc mà `@Value` phải xử lý từng ô:\n' +
     '\n' +
     '```yaml\n' +
     'app:\n' +
@@ -1088,7 +1089,7 @@ SS.addQuestions('java', [
     '}\n' +
     '```\n' +
     '\n' +
-    'Chú ý `DataSize` và `Duration`: Boot tự chuyển `10MB` thành số byte, `30s` thành `Duration`. Với `@Value` bạn sẽ phải tự parse chuỗi, và đó là chỗ sinh bug.\n' +
+    'Chú ý `DataSize` và `Duration`: Boot tự chuyển `10MB` thành số byte, `30s` thành `Duration`. `@Value` trong Boot cũng chuyển được các kiểu này, nhưng khi có nhiều giá trị liên quan, một object có kiểu vẫn dễ đọc và dễ validate hơn.\n' +
     '\n' +
     'Cũng chú ý **relaxed binding** ở đây: `max-size` trong YAML bind thẳng vào `maxSize` trong Java. Bạn có thể viết `max-size`, `maxSize`, `max_size` hay `MAX_SIZE` đều được.\n' +
     '\n' +
@@ -1186,7 +1187,7 @@ SS.addQuestions('java', [
     cols: ['@Value("${...}")', '@ConfigurationProperties'],
     rows: [
       ['Phạm vi', 'một giá trị lẻ', 'cả nhóm property vào POJO có cấu trúc'],
-      ['Kiểu phức', 'không', 'nested, List, Map, Duration, DataSize'],
+      ['Kiểu dữ liệu', 'từng giá trị: Duration, DataSize, List đơn giản', 'cả cấu trúc: nested, List, Map, Duration, DataSize'],
       ['Relaxed binding', 'hạn chế', 'đầy đủ (max-size ↔ maxSize)'],
       ['Validate', 'không', '@Validated (JSR-380) — sai là app không khởi động'],
     ],
@@ -1217,7 +1218,7 @@ SS.addQuestions('java', [
         "// @Value hợp cho MỘT giá trị lẻ:\n" +
         "@Value(\"${app.name}\") private String name;\n" +
         "// Nhưng thua ở: không gom nhóm, không validate, không metadata cho IDE,\n" +
-        "// không hỗ trợ relaxed binding đầy đủ, không bind được kiểu phức tạp.\n" +
+        "// không hỗ trợ relaxed binding đầy đủ, không bind gọn được cấu trúc lồng nhau.\n" +
         "// -> Nhiều hơn 2-3 property liên quan nhau thì luôn dùng @ConfigurationProperties.",
     },
     {
@@ -1380,7 +1381,7 @@ SS.addQuestions('java', [
     '</build>\n' +
     '```\n' +
     '\n' +
-    'Không có plugin này, `mvn package` chỉ ra một jar thường chứa mỗi class của bạn, chạy lên là `ClassNotFoundException` ngay.\n' +
+    'Không có plugin này, `mvn package` chỉ ra một jar thường chứa mỗi class của bạn. Chạy `java -jar` thường báo `no main manifest attribute`; kể cả có khai main class thì dependency cũng không nằm trong jar.\n' +
     '\n' +
     '## 7. Layered jar: tối ưu cache cho Docker\n' +
     '\n' +
@@ -1396,10 +1397,10 @@ SS.addQuestions('java', [
     '\n' +
     'thì mỗi lần sửa một dòng code, cả layer 50MB bị build lại và đẩy lại registry — dù 49MB trong đó không hề đổi.\n' +
     '\n' +
-    'Boot cung cấp `layertools` để tách jar theo tần suất thay đổi:\n' +
+    'Từ Boot 3.3, `jarmode=tools` tách jar theo tần suất thay đổi (bản cũ hơn dùng `layertools`):\n' +
     '\n' +
     '```bash\n' +
-    'java -Djarmode=layertools -jar app.jar list\n' +
+    'java -Djarmode=tools -jar app.jar list-layers\n' +
     '# dependencies\n' +
     '# spring-boot-loader\n' +
     '# snapshot-dependencies\n' +
@@ -1412,17 +1413,17 @@ SS.addQuestions('java', [
     'FROM eclipse-temurin:17-jre AS builder\n' +
     'WORKDIR /app\n' +
     'COPY target/app.jar app.jar\n' +
-    'RUN java -Djarmode=layertools -jar app.jar extract\n' +
+    'RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted\n' +
     '\n' +
     'FROM eclipse-temurin:17-jre\n' +
     'WORKDIR /app\n' +
     '# Ba layer dưới hiếm đổi -> Docker dùng lại cache\n' +
-    'COPY --from=builder /app/dependencies/ ./\n' +
-    'COPY --from=builder /app/spring-boot-loader/ ./\n' +
-    'COPY --from=builder /app/snapshot-dependencies/ ./\n' +
+    'COPY --from=builder /app/extracted/dependencies/ ./\n' +
+    'COPY --from=builder /app/extracted/spring-boot-loader/ ./\n' +
+    'COPY --from=builder /app/extracted/snapshot-dependencies/ ./\n' +
     '# Layer này đổi mỗi lần build, nhưng chỉ vài trăm KB\n' +
-    'COPY --from=builder /app/application/ ./\n' +
-    'ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]\n' +
+    'COPY --from=builder /app/extracted/application/ ./\n' +
+    'ENTRYPOINT ["java", "-jar", "app.jar"]\n' +
     '```\n' +
     '\n' +
     'Kết quả: build lần thứ hai chỉ đẩy vài trăm KB thay vì 50MB. Trên một pipeline chạy vài chục lần mỗi ngày, khác biệt này rất rõ.\n' +
@@ -1472,7 +1473,7 @@ SS.addQuestions('java', [
   essence:
     'Server trở thành **dependency** chứ không còn là hạ tầng cài sẵn: Tomcat chạy như các object Java trong chính JVM của bạn. Fat jar giữ nguyên các jar con trong `BOOT-INF/lib` và dùng class loader riêng để đọc jar-in-jar, nhờ đó cho ra một artifact tự chứa, chạy giống hệt nhau trên laptop, CI và production.',
   example:
-    'Dockerfile chỉ cần `FROM eclipse-temurin:17-jre`, `COPY app.jar` và `ENTRYPOINT ["java","-jar","/app.jar"]`. Nhưng viết vậy thì mỗi lần sửa một dòng code, cả layer 50MB bị đẩy lại registry dù 49MB trong đó là dependency không đổi. Dùng `java -Djarmode=layertools -jar app.jar extract` để tách dependencies, loader, snapshot-dependencies và application thành các layer riêng, build lần sau chỉ còn đẩy vài trăm KB.',
+    'Dockerfile chỉ cần `FROM eclipse-temurin:17-jre`, `COPY app.jar` và `ENTRYPOINT ["java","-jar","/app.jar"]`. Nhưng viết vậy thì mỗi lần sửa một dòng code, cả layer 50MB bị đẩy lại registry dù 49MB trong đó là dependency không đổi. Dùng `java -Djarmode=tools -jar app.jar extract --layers --destination extracted` để tách dependencies, loader, snapshot-dependencies và application thành các layer riêng, build lần sau chỉ còn đẩy vài trăm KB.',
   viz: {
     type: 'flow',
     title: 'java -jar app.jar (fat jar)',
@@ -1499,13 +1500,13 @@ SS.addQuestions('java', [
         "# Start-Class: com.example.Application                             <- main thật của bạn\n" +
         "\n" +
         "# Vì sao cần launcher riêng: ClassLoader chuẩn của Java KHÔNG đọc được\n" +
-        "# jar lồng trong jar. Boot dùng LaunchedURLClassLoader để làm việc đó.\n" +
+        "# jar lồng trong jar. Boot dùng LaunchedClassLoader để làm việc đó.\n" +
         "# Đây cũng là lý do KHÔNG nên dùng \"uber jar\" giải nén trộn hết class vào nhau:\n" +
         "# trộn xong là mất chữ ký, đụng file trùng tên trong META-INF/services.\n" +
         "\n" +
         "# Giải nén sẵn theo lớp -> Docker cache tốt hơn nhiều (lib đổi ít hơn code)\n" +
-        "java -Djarmode=layertools -jar app.jar extract\n" +
-        "# tạo ra: dependencies/ spring-boot-loader/ snapshot-dependencies/ application/",
+        "java -Djarmode=tools -jar app.jar extract --layers --destination extracted\n" +
+        "# tạo trong extracted/: dependencies/ spring-boot-loader/ snapshot-dependencies/ application/",
     },
   ],
 },
@@ -1550,7 +1551,7 @@ SS.addQuestions('java', [
     '| `/actuator/metrics` | Metric dạng JSON, tra từng chỉ số | Debug thủ công |\n' +
     '| `/actuator/prometheus` | Toàn bộ metric dạng Prometheus | Prometheus scrape |\n' +
     '| `/actuator/loggers` | Xem và **đổi log level lúc chạy** | Điều tra sự cố |\n' +
-    '| `/actuator/env` | Toàn bộ property và nguồn của chúng | Gỡ lỗi cấu hình |\n' +
+    '| `/actuator/env` | Property và nguồn của chúng; giá trị mặc định bị che | Gỡ lỗi cấu hình |\n' +
     '| `/actuator/threaddump` | Trạng thái mọi thread | Điều tra treo, deadlock |\n' +
     '| `/actuator/heapdump` | Tải file heap dump | Điều tra rò bộ nhớ |\n' +
     '| `/actuator/mappings` | Bảng route đã đăng ký | Kiểm tra endpoint |\n' +
@@ -1566,7 +1567,7 @@ SS.addQuestions('java', [
     '  -d \'{"configuredLevel":"DEBUG"}\'\n' +
     '```\n' +
     '\n' +
-    '`/actuator/env` chấm dứt mọi tranh cãi kiểu "cấu hình đã vào chưa", vì nó chỉ rõ giá trị cuối cùng đến từ nguồn nào.\n' +
+    '`/actuator/env` chấm dứt mọi tranh cãi kiểu "cấu hình đã vào chưa", vì nó chỉ rõ property đến từ nguồn nào; giá trị thật chỉ hiện khi bạn cấu hình `show-values`.\n' +
     '\n' +
     '`/actuator/heapdump` cực kỳ nhạy cảm: file tải về chứa **toàn bộ nội dung heap**, tức là có thể gồm cả mật khẩu, token và dữ liệu khách hàng đang nằm trong bộ nhớ.\n' +
     '\n' +
@@ -1673,7 +1674,7 @@ SS.addQuestions('java', [
     '\n' +
     '## 7. Bẫy hay gặp\n' +
     '\n' +
-    'Phơi `env` hoặc `configprops` ra ngoài mà quên rằng chúng in cả giá trị cấu hình. Boot có che bớt các khoá trông giống bí mật, nhưng đừng dựa hoàn toàn vào đó.\n' +
+    'Bật `show-values` cho `env` hoặc `configprops` rồi phơi ra ngoài. Mặc định Boot che toàn bộ giá trị, nhưng khi đã bật thì cấu hình nhạy cảm có thể bị lộ.\n' +
     '\n' +
     'Cho health phụ thuộc vào dịch vụ bên thứ ba, khiến hệ điều phối rút pod của bạn khi chính dịch vụ kia gặp sự cố.\n' +
     '\n' +
@@ -1868,7 +1869,7 @@ SS.addQuestions('java', [
     '/actuator/health/readiness   → chỉ gom các indicator thuộc nhóm readiness\n' +
     '```\n' +
     '\n' +
-    'Điểm quan trọng nhất, và cũng là thứ hay bị hỏi: mặc định của Boot đã đúng sẵn. `livenessState` **không** bao gồm các indicator kiểm tra hạ tầng bên ngoài như DB hay Redis; những cái đó nằm ở readiness. Nghĩa là bạn chỉ làm sai khi tự tay cấu hình sai.\n' +
+    'Điểm quan trọng nhất, và cũng là thứ hay bị hỏi: mặc định Boot chỉ đưa `livenessState` vào nhóm liveness và `readinessState` vào nhóm readiness. DB hay Redis **không** tự có mặt ở nhóm nào; muốn readiness phụ thuộc chúng thì bạn phải `include` tường minh và cân nhắc kỹ.\n' +
     '\n' +
     'Bật lên:\n' +
     '\n' +
@@ -2135,7 +2136,7 @@ SS.addQuestions('java', [
     '\n' +
     'Hai điều cần nhớ:\n' +
     '\n' +
-    '`terminationGracePeriodSeconds` phải **lớn hơn** `timeout-per-shutdown-phase`. Nếu app xin chờ 30 giây mà Kubernetes chỉ cho 20, thì đúng phút thứ 20 nó `SIGKILL` và mọi nỗ lực chờ đợi trở nên vô nghĩa. Quy tắc an toàn: `terminationGracePeriodSeconds = timeout của app + 10~15 giây` cho các bước dọn dẹp còn lại.\n' +
+    '`terminationGracePeriodSeconds` phải **lớn hơn** `timeout-per-shutdown-phase`. Nếu app xin chờ 30 giây mà Kubernetes chỉ cho 20, thì đúng giây thứ 20 nó `SIGKILL` và mọi nỗ lực chờ đợi trở nên vô nghĩa. Quy tắc an toàn: `terminationGracePeriodSeconds = timeout của app + 10~15 giây` cho các bước dọn dẹp còn lại.\n' +
     '\n' +
     '`preStop` với một lệnh sleep ngắn trông rất kỳ quặc, nên mục sau giải thích riêng.\n' +
     '\n' +
@@ -2478,17 +2479,21 @@ SS.addQuestions('java', [
     '```java\n' +
     '@SpringBootTest(webEnvironment = RANDOM_PORT)\n' +
     '@ActiveProfiles("test")\n' +
-    '@Testcontainers\n' +
-    'public abstract class IntegrationTestBase {\n' +
+    '@Import(TestContainersConfig.class)\n' +
+    'public abstract class IntegrationTestBase { }\n' +
     '\n' +
-    '    @Container\n' +
+    '@TestConfiguration(proxyBeanMethods = false)\n' +
+    'class TestContainersConfig {\n' +
+    '\n' +
+    '    @Bean\n' +
     '    @ServiceConnection\n' +
-    '    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");\n' +
-    '    // static -> container dùng chung cho MỌI test kế thừa\n' +
+    '    PostgreSQLContainer<?> postgres() {\n' +
+    '        return new PostgreSQLContainer<>("postgres:16");\n' +
+    '    }\n' +
     '}\n' +
     '```\n' +
     '\n' +
-    'Mọi integration test extends class này, và cả bộ chỉ nạp context một lần.\n' +
+    'Mọi integration test extends class này nên có thể dùng chung context đã cache. Container là Spring bean nên sống cùng context đó, tránh cảnh container đã dừng mà context vẫn được dùng lại.\n' +
     '\n' +
     '## 8. Chiến lược nên trình bày\n' +
     '\n' +
@@ -2845,15 +2850,15 @@ SS.addQuestions('java', [
     '\n' +
     'Vì sao có hai tầng? SLF4J là **giao diện**, Logback là **hiện thực**. Nhờ tách ra, thư viện bên thứ ba viết theo SLF4J vẫn chạy được dù ứng dụng của bạn chọn hiện thực nào.\n' +
     '\n' +
-    'Boot còn cài sẵn các cầu nối để gom mọi framework logging cũ về chung một chỗ:\n' +
+    'Boot còn cài sẵn các cầu nối để gom các API logging phổ biến về chung một chỗ:\n' +
     '\n' +
     '```\n' +
     'Java Util Logging ─┐\n' +
     'Apache Commons ────┼──→ cầu nối ──→ SLF4J ──→ Logback\n' +
-    'Log4j 1.x ─────────┘\n' +
+    'Log4j 2 API ───────┘\n' +
     '```\n' +
     '\n' +
-    'Nghĩa là một thư viện cũ vẫn dùng Log4j 1.x thì log của nó vẫn xuất hiện đúng định dạng chung, cùng file, cùng cấu hình level. Đây là chi tiết đáng nói vì nó giải thích tại sao bạn không bao giờ phải cấu hình logging cho từng thư viện.\n' +
+    'Nghĩa là một thư viện dùng Log4j 2 API hoặc Java Util Logging thì log của nó vẫn đi theo định dạng và cấu hình level chung. Log4j 1.x không nằm trong starter này, nên cần cầu nối riêng nếu còn dùng.\n' +
     '\n' +
     'Trong code, chỉ dùng SLF4J:\n' +
     '\n' +
@@ -3208,7 +3213,7 @@ SS.addQuestions('java', [
     '\n' +
     'DevTools tự vô hiệu hoá khi phát hiện ứng dụng đang chạy từ một artifact đóng gói đầy đủ, tức là khi bạn chạy `java -jar app.jar`. Nó nhận ra mình đang không ở trong môi trường phát triển và lặng lẽ tắt.\n' +
     '\n' +
-    'Ngoài ra, `spring-boot-maven-plugin` **loại nó khỏi fat jar** khi bạn khai báo đúng cách:\n' +
+    'Ngoài ra, `spring-boot-maven-plugin` **loại nó khỏi fat jar** theo mặc định. Cách khai báo thường dùng là:\n' +
     '\n' +
     '```xml\n' +
     '<!-- Maven -->\n' +
@@ -3224,7 +3229,7 @@ SS.addQuestions('java', [
     'developmentOnly \'org.springframework.boot:spring-boot-devtools\'\n' +
     '```\n' +
     '\n' +
-    'Chữ `optional` với `developmentOnly` chính là cơ chế đó. Bỏ chúng đi thì DevTools bị đóng gói vào jar — dù nó vẫn tự tắt lúc chạy, artifact của bạn vẫn phình ra và mang theo một thư viện không cần thiết.\n' +
+    'Với Maven, `excludeDevtools` mặc định là `true`; `optional` giúp DevTools không lan sang project phụ thuộc. Với Gradle, `developmentOnly` giữ nó ngoài artifact production. Chỉ khi tắt các cơ chế này thì DevTools mới bị đóng vào jar.\n' +
     '\n' +
     '## 5. Nếu cố tình bật ở production thì sao?\n' +
     '\n' +
@@ -3259,7 +3264,7 @@ SS.addQuestions('java', [
     '        ↓\n' +
     '~1 giây thay vì ~8 giây, nhưng là RESTART chứ không phải hot reload\n' +
     '        ↓\n' +
-    'khai optional / developmentOnly → không lọt vào fat jar\n' +
+    'plugin loại DevTools / developmentOnly → không lọt vào fat jar\n' +
     '        ↓\n' +
     'chạy java -jar → tự vô hiệu hoá\n' +
     '```\n' +
@@ -3268,9 +3273,9 @@ SS.addQuestions('java', [
     '\n' +
     'Hướng đào tiếp: khi ứng dụng đã chạy được và sửa được nhanh, thứ tiếp theo cần chuẩn hoá là cách nó trả lỗi ra ngoài — tức là xử lý lỗi tập trung với `@RestControllerAdvice` và `ProblemDetail`.',
   essence:
-    'DevTools là công cụ chỉ dành cho lúc phát triển: nó tách classpath thành **hai class loader** — base giữ nguyên thư viện, restart vứt đi và nạp lại code của bạn — nên rút vòng lặp từ khoảng 8 giây xuống còn 1 giây. Nhưng đó là restart chứ không phải hot reload, và nó cố ý tự vô hiệu hoá khi chạy từ `java -jar` cũng như không lọt vào fat jar nếu khai `optional`/`developmentOnly`.',
+    'DevTools là công cụ chỉ dành cho lúc phát triển: nó tách classpath thành **hai class loader** — base giữ nguyên thư viện, restart vứt đi và nạp lại code của bạn — nên rút vòng lặp từ khoảng 8 giây xuống còn 1 giây. Nhưng đó là restart chứ không phải hot reload, và nó cố ý tự vô hiệu hoá khi chạy từ `java -jar` cũng như mặc định không lọt vào fat jar.',
   example:
-    'Sửa một `@RestController` rồi lưu, DevTools dựng lại context trong khoảng một giây thay vì khởi động nguội mất tám giây. Điều kiện là IDE phải thực sự biên dịch ra file `.class` — trong IntelliJ nếu chưa bật build tự động thì bạn sẽ ngồi chờ một sự kiện không bao giờ tới. Cũng đừng quên `<optional>true</optional>` với Maven hay `developmentOnly` với Gradle, nếu không thư viện này bị đóng gói vào fat jar dù lúc chạy nó vẫn tự tắt.',
+    'Sửa một `@RestController` rồi lưu, DevTools dựng lại context trong khoảng một giây thay vì khởi động nguội mất tám giây. Điều kiện là IDE phải thực sự biên dịch ra file `.class` — trong IntelliJ nếu chưa bật build tự động thì bạn sẽ ngồi chờ một sự kiện không bao giờ tới. Cũng nên khai `<optional>true</optional>` với Maven để nó không lan sang project phụ thuộc, và dùng `developmentOnly` với Gradle.',
   viz: {
     type: 'compare',
     cols: ['DevTools ở dev', 'ở production'],
@@ -3368,7 +3373,8 @@ SS.addQuestions('java', [
         "        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);\n" +
         "        pd.setTitle(\"Dữ liệu không hợp lệ\");\n" +
         "        pd.setProperty(\"errors\", e.getBindingResult().getFieldErrors().stream()\n" +
-        "                .collect(toMap(FieldError::getField, FieldError::getDefaultMessage)));\n" +
+        "                .collect(groupingBy(FieldError::getField,\n" +
+        "                        mapping(FieldError::getDefaultMessage, toList()))));\n" +
         "        return pd;\n" +
         "    }\n" +
         "\n" +
@@ -3392,8 +3398,8 @@ SS.addQuestions('java', [
   answer:
     'Có `spring-boot-starter-validation` (Hibernate Validator) → tự bật.\n\n' +
     '- `@Valid` (Jakarta): kích hoạt validate object lồng nhau; đặt trên `@RequestBody`, param, hoặc field.\n' +
-    '- `@Validated` (Spring): thêm hỗ trợ **validation groups** và bật **method-level validation** khi đặt trên class (`@Service`, `@Controller`) → validate tham số/kết quả method.\n\n' +
-    'Lỗi ở `@RequestBody` → `MethodArgumentNotValidException`; ở param → `ConstraintViolationException`. Xử lý trong `@RestControllerAdvice`.',
+    '- `@Validated` (Spring): thêm hỗ trợ **validation groups** và bật **method-level validation** qua AOP khi đặt trên class như `@Service`. Với controller từ Spring 6.1, constraint đặt thẳng trên tham số được Spring MVC validate sẵn, không cần `@Validated` ở class.\n\n' +
+    'Lỗi ở `@Valid @RequestBody` → `MethodArgumentNotValidException`; constraint đặt thẳng trên tham số controller → `HandlerMethodValidationException` (Spring 6.1+); method validation qua AOP → `ConstraintViolationException`. Xử lý trong `@RestControllerAdvice`.',
   essence:
     '`@Valid` là "hãy validate cái này". `@Validated` là bản Spring mở rộng thêm groups + validate ngay tại biên method. Validate ở biên (controller/service) để dữ liệu vào trong luôn hợp lệ.',
   example:
@@ -3403,9 +3409,10 @@ SS.addQuestions('java', [
     cols: ['@Valid (Jakarta)', '@Validated (Spring)'],
     rows: [
       ['Vai trò', 'kích hoạt validate object lồng nhau', 'thêm validation groups + method-level'],
-      ['Đặt ở', '@RequestBody, param, field', 'class (@Service/@Controller) → validate tham số/kết quả method'],
+      ['Đặt ở', '@RequestBody, param, field', 'class (ví dụ @Service) → validate tham số/kết quả qua AOP'],
       ['Lỗi @RequestBody', 'MethodArgumentNotValidException', '—'],
-      ['Lỗi param', '—', 'ConstraintViolationException'],
+      ['Lỗi constraint trên tham số controller (6.1+)', 'HandlerMethodValidationException', '—'],
+      ['Lỗi method validation qua AOP', '—', 'ConstraintViolationException'],
     ],
   },
   demo: [
@@ -3421,15 +3428,14 @@ SS.addQuestions('java', [
         ") { }\n" +
         "\n" +
         "@RestController\n" +
-        "@Validated                                     // CẦN cho validate ở tham số đơn lẻ\n" +
         "public class OrderController {\n" +
         "\n" +
         "    // @Valid trên @RequestBody -> lỗi ném MethodArgumentNotValidException\n" +
         "    @PostMapping(\"/orders\")\n" +
         "    public Order create(@Valid @RequestBody CreateOrderRequest req) { }\n" +
         "\n" +
-        "    // Validate tham số rời (@RequestParam/@PathVariable) CHỈ chạy khi class\n" +
-        "    // có @Validated -> lỗi ném ConstraintViolationException (khác loại!)\n" +
+        "    // Spring 6.1+: constraint đặt thẳng trên @RequestParam/@PathVariable được\n" +
+        "    // Spring MVC validate sẵn -> lỗi ném HandlerMethodValidationException (khác loại!)\n" +
         "    @GetMapping(\"/orders\")\n" +
         "    public List<Order> list(@RequestParam @Min(1) @Max(100) int size) { }\n" +
         "}\n" +
@@ -3437,7 +3443,7 @@ SS.addQuestions('java', [
         "// Khác biệt cốt lõi:\n" +
         "//   @Valid     — chuẩn Jakarta, đệ quy vào object lồng nhau, KHÔNG có group\n" +
         "//   @Validated — của Spring, hỗ trợ GROUP, đặt được ở cấp class để bật\n" +
-        "//                validate cho tham số method\n" +
+        "//                validate tham số method qua AOP (ví dụ ở @Service)\n" +
         "public interface OnCreate { }\n" +
         "public interface OnUpdate { }\n" +
         "record UserDto(@NotNull(groups = OnUpdate.class) Long id,\n" +
@@ -3604,10 +3610,10 @@ SS.addQuestions('java', [
   q: '`@MockBean` khác Mockito `@Mock` thế nào trong test Spring?',
   answer:
     '`@Mock` (Mockito thuần): tạo mock, gán vào field test, không liên quan Spring context.\n\n' +
-    '`@MockBean` (Spring Boot Test): tạo mock **và thay thế bean cùng kiểu trong ApplicationContext** bằng mock đó. Mọi bean phụ thuộc vào nó sẽ nhận mock. Việc thay bean khiến context bị **đánh dấu dirty** → Spring tạo lại context cho test khác (chậm nếu lạm dụng).\n\n' +
+    '`@MockBean` (Spring Boot Test): tạo mock **và thay thế bean cùng kiểu trong ApplicationContext** bằng mock đó. Mọi bean phụ thuộc vào nó sẽ nhận mock. Tập bean bị mock trở thành một phần của **cache key**, nên mỗi tổ hợp khác nhau cần một context riêng (chậm nếu lạm dụng).\n\n' +
     'Boot 3.4+ giới thiệu `@MockitoBean` (thay `@MockBean` sẽ deprecated).',
   essence:
-    '`@Mock` cô lập một object. `@MockBean` cô lập một **bean bên trong context đang chạy** — mạnh hơn nhưng phá cache context, nên dùng có chọn lọc.',
+    '`@Mock` cô lập một object. `@MockBean` cô lập một **bean bên trong context đang chạy** — mạnh hơn nhưng làm tăng số context phải cache, nên dùng có chọn lọc.',
   example:
     '`@WebMvcTest(OrderController.class)` + `@MockBean OrderService service` — controller thật chạy với service giả, kiểm tra mapping/validation/HTTP status. Nếu chỉ test một helper thuần logic, dùng `@Mock` + `@InjectMocks` nhanh hơn nhiều.',
   viz: {
@@ -3616,7 +3622,7 @@ SS.addQuestions('java', [
     rows: [
       ['Phạm vi', 'một object, gán vào field test', 'thay bean cùng kiểu trong ApplicationContext'],
       ['Bean phụ thuộc', 'không liên quan', 'mọi bean phụ thuộc nhận mock'],
-      ['Context cache', 'không ảnh hưởng', 'đánh dấu dirty → tạo lại context (chậm nếu lạm dụng)'],
+      ['Context cache', 'không ảnh hưởng', 'tổ hợp mock khác nhau → context khác (chậm nếu lạm dụng)'],
       ['Dùng khi', 'test logic thuần (+ @InjectMocks)', 'cần cô lập 1 bean trong context đang chạy'],
     ],
   },
@@ -3665,7 +3671,7 @@ SS.addQuestions('java', [
   id: 'java-ucmq7u',
   q: 'File cấu hình: `.properties` vs `.yml`, multi-document YAML, `spring.config.import`?',
   answer:
-    '`.properties` (key phẳng) và `.yml` (phân cấp, gọn cho cấu trúc lồng nhau) tương đương về khả năng; không trộn hai file cùng tên (một cái sẽ bị bỏ qua).\n\n' +
+    '`.properties` (key phẳng) và `.yml` (phân cấp, gọn cho cấu trúc lồng nhau) tương đương về khả năng; nếu cùng vị trí có cả hai thì `.properties` được ưu tiên, nên chỉ chọn một định dạng.\n\n' +
     'YAML **multi-document**: ngăn bằng `---`, mỗi phần có thể gắn `spring.config.activate.on-profile` → cấu hình theo profile trong cùng một file.\n\n' +
     '`spring.config.import`: nạp thêm nguồn — `optional:file:./config/`, `configtree:/etc/secrets/` (mỗi file = 1 property, hợp K8s Secret mount), hoặc `configserver:` (Spring Cloud Config).',
   essence:
@@ -3789,7 +3795,7 @@ SS.addQuestions('java', [
         "// Code CHẶN bình thường lại đạt được throughput của code bất đồng bộ, mà vẫn\n" +
         "// giữ được stack trace dễ đọc và debugger dùng được.\n" +
         "\n" +
-        "// BA CÁI BẪY còn lại:\n" +
+        "// BỐN CÁI BẪY còn lại:\n" +
         "//  1) synchronized GHIM virtual thread vào carrier thread (đỡ hơn từ JDK 24,\n" +
         "//     trước đó nên đổi sang ReentrantLock ở đoạn có IO bên trong)\n" +
         "//  2) ThreadLocal: mỗi task một thread mới -> pattern cache theo thread vô dụng,\n" +

@@ -505,7 +505,7 @@ SS.addQuestions('java', [
     type: 'compare',
     cols: ['extends (is-a)', 'field bên trong (has-a)'],
     rows: [
-      ['Phép thử ngôn ngữ', 'Dog is a Animal', 'Car has an Engine'],
+      ['Phép thử ngôn ngữ', 'Dog is an Animal', 'Car has an Engine'],
       ['Phụ thuộc vào', 'chi tiết cài đặt của cha', 'chỉ contract public'],
       ['Số lượng cho phép', 'một class cha duy nhất', 'bao nhiêu thành phần cũng được'],
       ['Đổi lúc chạy', 'không', 'có — thay object bên trong'],
@@ -561,8 +561,8 @@ SS.addQuestions('java', [
         'set.added();   // 6, KHÔNG phải 3!\n' +
         '\n' +
         '// Vì sao: HashSet.addAll() bên trong tự gọi add() cho từng phần tử.\n' +
-        '// Đó là CHI TIẾT CÀI ĐẶT, không nằm trong tài liệu, và có thể đổi\n' +
-        '// ở bản JDK sau. Class con lại phụ thuộc vào chính chi tiết đó.\n' +
+        '// Đó là CHI TIẾT CÀI ĐẶT của AbstractCollection, không phải cam kết riêng\n' +
+        '// của HashSet. Class con lại phụ thuộc vào chính chi tiết đó.\n' +
         '// Composition không có vấn đề này: bạn chỉ gọi API public đã cam kết.',
     },
   ],
@@ -804,7 +804,7 @@ SS.addQuestions('java', [
     '| --- | --- | --- |\n' +
     '| Vai trò | mô tả **contract** | mô tả **base behavior** |\n' +
     '| Số lượng | một class implement nhiều interface | một class chỉ extends một class |\n' +
-    '| Instance state | thường không có | có |\n' +
+    '| Instance state | không có | có |\n' +
     '| Phù hợp cho | abstraction | shared implementation |\n' +
     '| Từ khoá | `implements` | `extends` |\n' +
     '\n' +
@@ -856,7 +856,7 @@ SS.addQuestions('java', [
     '\n' +
     'Tôi ưu tiên interface khi muốn định nghĩa contract hoặc abstraction giữa các thành phần — đặc biệt ở ranh giới giữa các tầng, vì nó cho phép mock trong test và không tiêu mất suất kế thừa duy nhất. Tôi dùng abstract class khi các class con có state chung hoặc có khung xử lý chung, ví dụ mẫu Template Method.\n' +
     '\n' +
-    'Và một mẹo thực dụng: **bắt đầu bằng interface**. Chuyển từ interface sang abstract class về sau dễ hơn nhiều so với chiều ngược lại.',
+    'Và một mẹo thực dụng: **bắt đầu bằng interface**. Khi cần dùng chung cài đặt, hãy thêm một abstract class hiện thực interface đó, như `AbstractList` với `List`; đừng đổi hẳn interface thành class vì việc này phá code và binary đang dùng nó.',
   essence:
     'Interface là contract, không có instance state và implement được nhiều; abstract class mang state cùng cài đặt chung nhưng tiêu mất suất kế thừa duy nhất. Default method sinh ra để tiến hoá interface, không phải để thay abstract class.',
   example:
@@ -894,7 +894,7 @@ SS.addQuestions('java', [
         '        var start = clock.instant();\n' +
         '        var data  = fetch();                  // con điền\n' +
         '        var body  = render(data);             // con điền\n' +
-        '        return new Report(body, clock.instant().minusMillis(start.toEpochMilli()));\n' +
+        '        return new Report(body, Duration.between(start, clock.instant()));\n' +
         '    }\n' +
         '    protected abstract List<Row> fetch();\n' +
         '    protected abstract String render(List<Row> rows);\n' +
@@ -903,7 +903,7 @@ SS.addQuestions('java', [
         '// Ranh giới thật sự chỉ còn 2 điểm:\n' +
         '//   1. abstract class có INSTANCE STATE + constructor, interface thì không\n' +
         '//   2. extends được MỘT, implements được NHIỀU\n' +
-        '// Mẹo: bắt đầu bằng interface. Đổi sang abstract class sau dễ hơn ngược lại.',
+        '// Mẹo: bắt đầu bằng interface; cần phần chung thì thêm abstract class hiện thực nó.',
     },
   ],
 },
@@ -989,7 +989,7 @@ SS.addQuestions('java', [
   essence:
     'Inheritance là is-a và cố định lúc biên dịch, gắn class con vào chi tiết cài đặt của cha; composition là has-a, chỉ gắn vào contract và thay được lúc chạy. Vì vậy mặc định nên chọn composition, còn inheritance chỉ dùng khi is-a là thật.',
   example:
-    'Cần thêm cache cho `OrderRepository`. Cách kế thừa là `CachingOrderRepository extends JpaOrderRepository` — dính chặt vào JPA, và nếu class cha gọi chéo method nội bộ thì cache bị bỏ qua. Cách composition là `CachingOrderRepository implements OrderRepository` giữ một `OrderRepository` bên trong — dùng được với bất kỳ implementation nào, và lồng thêm lớp đo thời gian cũng dễ.',
+    'Cần thêm cache cho `OrderRepository`. Cách kế thừa là `CachingOrderRepository extends JpaOrderRepository` — dính chặt vào JPA, và nếu class cha tự gọi `findById()` thì lời gọi đó cũng đi vào bản override, nên hành vi phụ thuộc chi tiết cài đặt của cha. Cách composition là `CachingOrderRepository implements OrderRepository` giữ một `OrderRepository` bên trong — dùng được với bất kỳ implementation nào, và lồng thêm lớp đo thời gian cũng dễ. Đổi lại, lời gọi nội bộ bên trong `delegate` sẽ không đi qua cache.',
   viz: {
     type: 'compare',
     cols: ['Inheritance', 'Composition'],
@@ -1011,12 +1011,17 @@ SS.addQuestions('java', [
         '    private final Map<Long, Order> cache = new ConcurrentHashMap<>();\n' +
         '\n' +
         '    @Override public Order findById(Long id) {\n' +
-        '        return cache.computeIfAbsent(id, super::findById);\n' +
+        '        Order cached = cache.get(id);\n' +
+        '        if (cached != null) return cached;\n' +
+        '        Order loaded = super.findById(id);      // không gọi DB trong computeIfAbsent\n' +
+        '        if (loaded != null) cache.put(id, loaded);\n' +
+        '        return loaded;\n' +
         '    }\n' +
         '}\n' +
         '// Ba vấn đề:\n' +
         '//  1. chỉ cache được cho JPA, đổi sang MyBatis là viết lại\n' +
-        '//  2. nếu findAll() bên trong cha tự gọi findById() thì cache bị BỎ QUA\n' +
+        '//  2. nếu findAll() của cha tự gọi findById(), lời gọi sẽ đi vào bản override:\n' +
+        '//     hành vi phụ thuộc chi tiết cài đặt mà cha không cam kết\n' +
         '//  3. đã tiêu mất suất extends duy nhất\n' +
         '\n' +
         '// CÁCH COMPOSITION — bọc bất kỳ implementation nào\n' +
@@ -1027,10 +1032,15 @@ SS.addQuestions('java', [
         '    CachingRepo2(OrderRepository delegate) { this.delegate = delegate; }\n' +
         '\n' +
         '    public Order findById(Long id) {\n' +
-        '        return cache.computeIfAbsent(id, delegate::findById);\n' +
+        '        Order cached = cache.get(id);\n' +
+        '        if (cached != null) return cached;\n' +
+        '        Order loaded = delegate.findById(id);   // không gọi DB trong computeIfAbsent\n' +
+        '        if (loaded != null) cache.put(id, loaded);\n' +
+        '        return loaded;\n' +
         '    }\n' +
         '}\n' +
         '\n' +
+        '// Lưu ý: nếu delegate tự gọi findById() bên trong, lời gọi đó KHÔNG qua cache.\n' +
         '// Lồng được nhiều lớp, mỗi lớp một việc — chuyện bất khả thi với extends:\n' +
         'OrderRepository repo =\n' +
         '    new TimingRepo(\n' +
@@ -1199,7 +1209,7 @@ SS.addQuestions('java', [
     'Maintainable System\n' +
     '```\n' +
     '\n' +
-    'Ba nguyên tắc S, I hướng tới **cohesion** — mỗi đơn vị code tập trung vào một việc. Ba nguyên tắc O, L, D hướng tới **coupling thấp** — các đơn vị nối với nhau qua trừu tượng chứ không qua chi tiết.\n' +
+    'Hai nguyên tắc S, I hướng tới **cohesion** — mỗi đơn vị code tập trung vào một việc. Ba nguyên tắc O, L, D hướng tới **coupling thấp** — các đơn vị nối với nhau qua trừu tượng chứ không qua chi tiết.\n' +
     '\n' +
     '## 4. Một cảnh báo\n' +
     '\n' +
@@ -1638,7 +1648,7 @@ SS.addQuestions('java', [
         '// DẤU HIỆU 1: override rồi ném UnsupportedOperationException\n' +
         'class ReadOnlyList<E> extends ArrayList<E> {\n' +
         '    @Override public boolean add(E e) {\n' +
-        '        throw new UnsupportedOperationException();   // List hứa add() được\n' +
+        '        throw new UnsupportedOperationException();   // ArrayList hứa add() chạy được\n' +
         '    }\n' +
         '}\n' +
         '// -> đúng ra phải implements một interface HẸP HƠN, ví dụ Iterable<E>\n' +

@@ -59,7 +59,7 @@ SS.addQuestions('java', [
   essence:
     'ArrayList là mảng Object[] động: phần tử nằm liên tục nên get(index) là O(1) và duyệt tuần tự rất thân thiện với cache CPU. Cái giá là chèn/xoá ở giữa phải dịch mảng, tức O(n).',
   example:
-    'Khi đọc 100.000 dòng từ database vào danh sách rồi chỉ duyệt và hiển thị, `ArrayList` là lựa chọn mặc định. Nếu biết trước số lượng, `new ArrayList<>(100_000)` giúp tránh khoảng 17 lần cấp phát mảng mới cùng ngần ấy lần copy.',
+    'Khi đọc 100.000 dòng từ database vào danh sách rồi chỉ duyệt và hiển thị, `ArrayList` là lựa chọn mặc định. Nếu biết trước số lượng, `new ArrayList<>(100_000)` giúp tránh khoảng 23 lần cấp phát mảng mới cùng ngần ấy lần copy.',
   viz: {
     type: 'bars',
     title: 'ArrayList — chi phí tương đối các thao tác',
@@ -88,7 +88,7 @@ SS.addQuestions('java', [
         '\n' +
         '// BIẾT TRƯỚC SỐ LƯỢNG thì đặt capacity ngay từ đầu:\n' +
         'List<Row> rows = new ArrayList<>(100_000);   // 1 lần cấp phát\n' +
-        '// Không đặt: 0 -> 10 -> 15 -> 22 -> ... -> ~100k, khoảng 25 lần\n' +
+        '// Không đặt: 0 -> 10 -> 15 -> 22 -> ... -> ~100k, khoảng 24 lần\n' +
         '// cấp phát mảng mới + copy, và tạo rác cho GC.\n' +
         '\n' +
         '// XOÁ TRONG VÒNG LẶP: bẫy kinh điển\n' +
@@ -349,7 +349,7 @@ SS.addQuestions('java', [
   essence:
     'ArrayList không mở rộng mảng mà tạo mảng mới lớn hơn khoảng 1.5 lần rồi copy sang. Một lần resize là O(n) nhưng ngày càng thưa dần, nên trung bình mỗi lần add cuối vẫn là hằng số — đó chính là nghĩa của amortized O(1).',
   example:
-    'Đọc 1 triệu bản ghi mà không đặt capacity: JVM phải cấp phát khoảng 35 mảng liên tiếp và copy tổng cộng vài triệu tham chiếu, để lại một đống rác kích thước lớn — thứ dễ rơi thẳng vào old generation và kích hoạt full GC. Một tham số trong constructor loại bỏ toàn bộ chuyện đó.',
+    'Đọc 1 triệu bản ghi mà không đặt capacity: JVM phải cấp phát khoảng 30 mảng liên tiếp và copy tổng cộng vài triệu tham chiếu, để lại một đống rác kích thước lớn — thứ dễ rơi thẳng vào old generation và kích hoạt full GC. Một tham số trong constructor loại bỏ toàn bộ chuyện đó.',
   demo: [
     {
       lang: 'java',
@@ -429,7 +429,7 @@ SS.addQuestions('java', [
     '\n' +
     '## 3. Bảng gộp cho các cấu trúc hay gặp\n' +
     '\n' +
-    '| | get theo index | tìm theo giá trị | thêm cuối | thêm đầu |\n' +
+    '| | get theo index | tìm phần tử hoặc khoá | thêm cuối / `put` | thêm đầu |\n' +
     '| --- | --- | --- | --- | --- |\n' +
     '| `ArrayList` | O(1) | O(n) | O(1)* | O(n) |\n' +
     '| `LinkedList` | O(n) | O(n) | O(1) | O(1) |\n' +
@@ -437,7 +437,7 @@ SS.addQuestions('java', [
     '| `HashMap` | — | O(1) trung bình | O(1)* | — |\n' +
     '| `TreeMap` | — | O(log n) | O(log n) | — |\n' +
     '\n' +
-    'Dấu `*` nghĩa là amortized.\n' +
+    'Dấu `*` nghĩa là amortized. Với `HashMap` và `TreeMap`, cột tìm kiếm là tìm theo khoá; `containsValue` vẫn là O(n).\n' +
     '\n' +
     '## 4. Một lưu ý về Big-O\n' +
     '\n' +
@@ -445,7 +445,7 @@ SS.addQuestions('java', [
     '\n' +
     'Từ đây chúng ta chuyển sang nhóm `Set` và `Map` — nơi Big-O bắt đầu thật sự quyết định, vì khác biệt là O(1) so với O(n).',
   essence:
-    'ArrayList O(1) cho truy cập theo index và O(n) khi chèn/xoá giữa vì phải dịch mảng; LinkedList ngược lại. Nhưng Big-O bỏ qua hằng số, và hằng số của bộ nhớ liên tục nhỏ hơn nhiều — nên với dữ liệu vừa, hãy chọn theo API chứ đừng chọn theo bảng.',
+    'ArrayList O(1) cho truy cập theo index và O(n) khi chèn/xoá giữa vì phải dịch mảng; LinkedList truy cập theo index là O(n), chỉ O(1) ở hai đầu hoặc khi đã đứng đúng vị trí bằng iterator. Nhưng Big-O bỏ qua hằng số, và hằng số của bộ nhớ liên tục nhỏ hơn nhiều — nên với dữ liệu vừa, hãy chọn theo API chứ đừng chọn theo bảng.',
   example:
     'Cần kiểm tra một mã sản phẩm có nằm trong danh sách 50.000 mã hay không, gọi hàng nghìn lần mỗi giây. `list.contains(code)` là O(n) và sẽ giết CPU. Đổi sang `Set<String>` cho O(1) — đây là loại tối ưu mà Big-O thật sự quyết định.',
   demo: [
@@ -837,7 +837,7 @@ SS.addQuestions('java', [
       { to: 2, label: 'lấy k bit thấp làm chỉ số bucket bằng phép AND — nhanh hơn phép chia dư nhiều lần' },
       { to: 3, label: 'bucket rỗng thì chèn node mới ngay và xong' },
       { to: 4, label: 'có collision: so trường hash trước (rẻ), trùng mới gọi equals() — trùng key thì thay value, không thì nối thêm node' },
-      { to: 5, label: 'chuỗi đạt 8 node và table đã >= 64 ô thì chuyển bucket sang Red-Black Tree' },
+      { to: 5, label: 'thêm node vào chuỗi đã có 8 node và table đã >= 64 ô thì chuyển bucket sang Red-Black Tree' },
     ],
   },
   demo: [
@@ -1218,7 +1218,7 @@ SS.addQuestions('java', [
     'hash = ...1011 0101   -> & 1111 -> bucket 5     (khác hash, cùng bucket)\n' +
     '```\n' +
     '\n' +
-    'Với một bảng 16 ô, chỉ cần 16 key là chắc chắn có collision.\n' +
+    'Nếu bảng vẫn giữ 16 ô, từ key thứ 17 chắc chắn có collision, dù thực tế collision thường đến sớm hơn nhiều.\n' +
     '\n' +
     '## 3. Lưu ý\n' +
     '\n' +
@@ -1307,22 +1307,22 @@ SS.addQuestions('java', [
     '\n' +
     '## 3. Khi bucket quá dài\n' +
     '\n' +
-    'Từ Java 8, khi bucket quá dài và thoả điều kiện treeification, chuỗi được chuyển sang **Red-Black Tree**. Nhờ đó tình huống xấu nhất từ O(n) giảm còn O(log n).\n' +
+    'Từ Java 8, khi bucket quá dài và thoả điều kiện treeification, chuỗi được chuyển sang **Red-Black Tree**. Nhờ đó tìm kiếm trong bucket thường giảm từ O(n) còn O(log n). Ngoại lệ: nếu các key trùng hệt hash và không `Comparable`, cây không biết rẽ nhánh nào nên vẫn có thể phải duyệt gần hết bucket.\n' +
     '\n' +
     '```\n' +
     'bucket ngắn  -> linked list  -> tìm O(k)\n' +
-    'bucket dài   -> đỏ-đen tree  -> tìm O(log k)\n' +
+    'bucket dài   -> đỏ-đen tree  -> thường tìm O(log k)\n' +
     '```\n' +
     '\n' +
     '## 4. Một chi tiết dễ bị hỏi vặn\n' +
     '\n' +
-    'Java 7 chèn node mới vào **đầu** chuỗi; Java 8 đổi sang chèn vào **cuối**. Lý do không phải hiệu năng mà là để tránh một lỗi kinh điển: trong Java 7, việc resize đồng thời từ nhiều thread có thể tạo ra **vòng lặp vô tận** trong chuỗi, khiến `get()` treo CPU ở 100% mãi mãi.\n' +
+    'Java 7 chèn node mới vào **đầu** chuỗi; Java 8 đổi sang chèn vào **cuối**. Chi tiết này hay được nhắc cùng một lỗi kinh điển: trong Java 7, việc resize đồng thời từ nhiều thread có thể tạo ra **vòng lặp vô tận** trong chuỗi, khiến `get()` treo CPU ở 100% mãi mãi.\n' +
     '\n' +
-    'Java 8 vẫn không làm `HashMap` thread-safe, chỉ là không còn tạo vòng lặp nữa. Câu về thread-safety phía sau sẽ nói kỹ.\n' +
+    'Đừng suy ra rằng Java 8 đã an toàn hơn cho đa luồng. `HashMap` vẫn không thread-safe: ghi đồng thời có thể làm hỏng cấu trúc, ném `ClassCastException`, thậm chí treo trong bucket dạng cây. Câu về thread-safety phía sau sẽ nói kỹ.\n' +
     '\n' +
     'Câu tiếp theo đi vào chi tiết quá trình treeify.',
   essence:
-    'Java dùng separate chaining: các key cùng bucket nối thành chuỗi, và khi tìm thì so trường hash trước rồi mới gọi equals. Bucket quá dài sẽ được chuyển thành cây đỏ-đen để tình huống xấu nhất là O(log n) thay vì O(n).',
+    'Java dùng separate chaining: các key cùng bucket nối thành chuỗi, và khi tìm thì so trường hash trước rồi mới gọi equals. Bucket quá dài sẽ được chuyển thành cây đỏ-đen để tìm kiếm thường còn O(log n) thay vì O(n), trừ khi các key trùng hash mà không so sánh được.',
   example:
     'Trong một map dùng `String` làm key, so sánh trường `hash` trước giúp bỏ qua gần hết các node không khớp mà không phải so từng ký tự. Với key là chuỗi dài như URL hay JSON, khác biệt này rất đáng kể.',
   viz: {
@@ -1355,13 +1355,13 @@ SS.addQuestions('java', [
         '//   Java 7: chèn vào ĐẦU chuỗi (head insertion)\n' +
         '//   Java 8: chèn vào CUỐI chuỗi (tail insertion)\n' +
         '//\n' +
-        '// Vì sao đổi: trong Java 7, hai thread cùng resize có thể ĐẢO NGƯỢC\n' +
+        '// Lỗi hay được nhắc ở Java 7: hai thread cùng resize có thể ĐẢO NGƯỢC\n' +
         '// chuỗi và tạo ra vòng lặp:  A -> B -> A -> B -> ...\n' +
         '// Sau đó get() trên bucket đó lặp VÔ TẬN, CPU 100% và không bao giờ dừng.\n' +
         '// Đây là sự cố production kinh điển của HashMap dùng sai trong đa luồng.\n' +
         '//\n' +
-        '// Java 8 không còn tạo vòng lặp, NHƯNG HashMap vẫn KHÔNG thread-safe:\n' +
-        '// vẫn mất dữ liệu, vẫn đọc được trạng thái dở dang.',
+        '// Từ Java 8, HashMap vẫn KHÔNG thread-safe: vẫn mất dữ liệu, vẫn đọc được\n' +
+        '// trạng thái dở dang, và bucket dạng cây vẫn có thể hỏng hoặc treo.',
     },
   ],
 },
@@ -1416,7 +1416,7 @@ SS.addQuestions('java', [
     'UNTREEIFY_THRESHOLD = 6\n' +
     '```\n' +
     '\n' +
-    'Khi cây co lại còn 6 node, nó quay về linked list. Khoảng đệm giữa 8 và 6 nhằm tránh việc chuyển qua chuyển lại liên tục quanh ngưỡng.\n' +
+    'Khi resize tách bucket, phần nào còn từ 6 node trở xuống sẽ quay về linked list; còn khi xoá node, `HashMap` xét xem hình dạng cây đã quá nhỏ chưa. Khoảng đệm giữa 8 và 6 nhằm tránh việc chuyển qua chuyển lại liên tục quanh ngưỡng.\n' +
     '\n' +
     '## 4. Vì sao chọn số 8\n' +
     '\n' +
@@ -1424,17 +1424,17 @@ SS.addQuestions('java', [
     '\n' +
     'Vì vậy treeify chủ yếu là **lưới an toàn**, không phải đường chạy thường ngày. Câu tiếp theo sẽ nói về chính cấu trúc cây đó.',
   essence:
-    'Treeify chuyển bucket dài từ linked list sang cây đỏ-đen để tình huống xấu nhất là O(log n). Điều kiện là chuỗi đạt 8 node VÀ bảng đã có ít nhất 64 ô — bảng nhỏ hơn thì HashMap chọn resize trước, vì bucket dài lúc đó là do thiếu chỗ.',
+    'Treeify chuyển bucket dài từ linked list sang cây đỏ-đen để tìm kiếm thường còn O(log n). Điều kiện là thêm node vào bucket đã có 8 node VÀ bảng đã có ít nhất 64 ô — bảng nhỏ hơn thì HashMap chọn resize trước, vì bucket dài lúc đó là do thiếu chỗ.',
   example:
-    'Một hệ thống dùng `HashMap` với key là object tự viết có `hashCode()` chỉ dựa trên một field ít giá trị. Nhờ treeify, hiệu năng xấu nhất chỉ giảm còn O(log n) thay vì sập hẳn — nhưng đó là dấu hiệu cần sửa `hashCode()`, không phải lý do để yên tâm.',
+    'Một hệ thống dùng `HashMap` với key là object tự viết có `hashCode()` chỉ dựa trên một field ít giá trị. Treeify chỉ cứu được khi cây phân biệt được key: hash khác nhau, hoặc key là `Comparable`. Nếu nhiều key trùng hệt hash và không `Comparable`, `get` vẫn có thể duyệt gần hết bucket — đó là dấu hiệu cần sửa `hashCode()`, không phải lý do để yên tâm.',
   viz: {
     type: 'compare',
     cols: ['Bucket dạng chuỗi', 'Bucket đã treeify'],
     rows: [
       ['Cấu trúc', 'linked list', 'cây đỏ-đen'],
       ['Tìm kiếm trong bucket', 'O(k)', 'O(log k)'],
-      ['Điều kiện chuyển sang', 'mặc định', 'chuỗi >= 8 VÀ table >= 64'],
-      ['Quay lại chuỗi khi', '—', 'còn <= 6 node'],
+      ['Điều kiện chuyển sang', 'mặc định', 'thêm vào chuỗi đã có >= 8 node VÀ table >= 64'],
+      ['Quay lại chuỗi khi', '—', 'resize tách còn <= 6 node, hoặc xoá làm cây quá nhỏ'],
       ['Yêu cầu ở key', 'chỉ equals', 'so sánh được, hoặc dùng hash và tên class'],
     ],
   },
@@ -1444,8 +1444,8 @@ SS.addQuestions('java', [
       title: 'Ba hằng số quyết định treeify',
       code:
         '// Trong java.util.HashMap:\n' +
-        'static final int TREEIFY_THRESHOLD    = 8;    // chuỗi dài >= 8  -> xét treeify\n' +
-        'static final int UNTREEIFY_THRESHOLD  = 6;    // cây còn <= 6    -> quay về list\n' +
+        'static final int TREEIFY_THRESHOLD    = 8;    // thêm vào chuỗi đã có >= 8 node -> xét treeify\n' +
+        'static final int UNTREEIFY_THRESHOLD  = 6;    // resize tách còn <= 6 -> về list\n' +
         'static final int MIN_TREEIFY_CAPACITY = 64;   // table phải >= 64 ô\n' +
         '\n' +
         '// Logic thật (rút gọn) khi một bucket vượt ngưỡng:\n' +
@@ -1461,7 +1461,7 @@ SS.addQuestions('java', [
         '\n' +
         '// VÌ SAO số 8: với hash phân bố tốt, theo phân phối Poisson\n' +
         '//   bucket có 1 phần tử : ~0.30\n' +
-        '//   bucket có 2 phần tử : ~0.15\n' +
+        '//   bucket có 2 phần tử : ~0.076\n' +
         '//   ...\n' +
         '//   bucket có 8 phần tử : ~0.00000006\n' +
         '// -> chạm 8 nghĩa là hashCode() của bạn tồi, hoặc đang bị tấn công.\n' +
@@ -1524,10 +1524,11 @@ SS.addQuestions('java', [
     '```\n' +
     '1. so theo trường hash đã lưu\n' +
     '2. nếu hash bằng nhau và key là Comparable -> compareTo()\n' +
-    '3. nếu vẫn không phân định -> so theo tên class, rồi identityHashCode\n' +
+    '3. khi CHÈN mà vẫn không phân định -> so theo tên class, rồi identityHashCode\n' +
+    '4. khi TÌM mà vẫn không phân định -> thử cả hai nhánh của cây\n' +
     '```\n' +
     '\n' +
-    'Bước thứ ba là một giải pháp thoả hiệp: nó không có ý nghĩa thứ tự nào, chỉ cần **ổn định** để cây hoạt động được.\n' +
+    'Bước thứ ba là một giải pháp thoả hiệp: nó không có ý nghĩa thứ tự nào, chỉ cần **ổn định** để chèn được vào cây. Nó không giúp tìm lại key, nên khi hash trùng và key không so sánh được, `get` có thể phải duyệt gần hết bucket.\n' +
     '\n' +
     '## 4. Vì sao chọn Red-Black chứ không phải AVL\n' +
     '\n' +
@@ -1544,7 +1545,7 @@ SS.addQuestions('java', [
       title: 'Cách HashMap so sánh key trong cây khi key không Comparable',
       code:
         '// Cây tìm kiếm cần THỨ TỰ, nhưng key của HashMap không bắt buộc Comparable.\n' +
-        '// HashMap giải quyết theo ba bước (TreeNode.find / comparableClassFor):\n' +
+        '// HashMap giải quyết theo các bước sau (TreeNode.find khi tìm, putTreeVal khi chèn):\n' +
         '\n' +
         '//   1. so theo trường hash đã lưu sẵn\n' +
         'if (ph > h)      dir = -1;\n' +
@@ -1554,13 +1555,14 @@ SS.addQuestions('java', [
         'else if ((kc = comparableClassFor(k)) != null)\n' +
         '    dir = compareComparables(kc, k, pk);\n' +
         '\n' +
-        '//   3. vẫn không phân định -> tiebreak theo tên class rồi identityHashCode\n' +
+        '//   3. KHI CHÈN mà vẫn không phân định -> tiebreak theo tên class rồi identityHashCode\n' +
         'static int tieBreakOrder(Object a, Object b) {\n' +
         '    int d = a.getClass().getName().compareTo(b.getClass().getName());\n' +
         '    if (d == 0) d = System.identityHashCode(a) <= System.identityHashCode(b) ? -1 : 1;\n' +
         '    return d;\n' +
         '}\n' +
-        '// Bước 3 KHÔNG mang ý nghĩa thứ tự nào — chỉ cần ỔN ĐỊNH để cây chạy được.\n' +
+        '// Bước 3 KHÔNG mang ý nghĩa thứ tự nào — chỉ cần ỔN ĐỊNH để chèn vào cây.\n' +
+        '// Khi TÌM, find() không dùng tiebreak: nó phải thử cả hai nhánh -> có thể O(k).\n' +
         '\n' +
         '// VÌ SAO Red-Black chứ không phải AVL:\n' +
         '//   AVL cân bằng chặt hơn -> tìm nhanh hơn chút, nhưng XOAY NHIỀU hơn\n' +
@@ -1713,9 +1715,9 @@ SS.addQuestions('java', [
     '\n' +
     '## 4. Chi phí thực tế\n' +
     '\n' +
-    'Một `HashMap` đi từ rỗng tới 1 triệu phần tử phải resize khoảng 17 lần, và lần cuối cùng phải di chuyển ~1 triệu entry cùng lúc — một đợt tạm dừng đủ để thấy trong biểu đồ độ trễ.\n' +
+    'Một `HashMap` đi từ rỗng tới 1 triệu phần tử phải resize khoảng 17 lần, và lần cuối cùng phải di chuyển khoảng 786.000 entry cùng lúc — một đợt tạm dừng đủ để thấy trong biểu đồ độ trễ.\n' +
     '\n' +
-    'Với `ConcurrentHashMap` thì tệ hơn nữa vì resize phải phối hợp giữa các thread. Đặt đúng initial capacity là một trong những tối ưu rẻ nhất mà bạn có thể làm.',
+    'Với `ConcurrentHashMap`, resize được chia cho các thread cùng làm, nên đặt đúng capacity vẫn giúp giảm việc phải phối hợp. Đặt đúng initial capacity là một trong những tối ưu rẻ nhất mà bạn có thể làm.',
   essence:
     'HashMap resize khi size vượt capacity × loadFactor, và luôn nhân đôi capacity để giữ tính chất luỹ thừa của 2. Java 8 tối ưu bằng cách tách mỗi chuỗi thành hai — entry chỉ có thể ở lại chỗ cũ hoặc dời đúng một khoảng bằng capacity cũ.',
   example:
@@ -1753,8 +1755,8 @@ SS.addQuestions('java', [
         '\n' +
         '// CHI PHÍ THẬT: từ rỗng lên 1 triệu phần tử\n' +
         '//   16 -> 32 -> ... -> 2.097.152 : khoảng 17 lần resize\n' +
-        '//   lần cuối phải dời ~1 triệu entry TRONG MỘT LẦN -> khựng thấy rõ\n' +
-        '// Với ConcurrentHashMap còn tệ hơn vì phải phối hợp giữa các thread.\n' +
+        '//   lần cuối phải dời ~786.000 entry TRONG MỘT LẦN -> khựng thấy rõ\n' +
+        '// ConcurrentHashMap chia việc resize cho các thread, nhưng vẫn có chi phí phối hợp.\n' +
         '\n' +
         '// Vì sao HashMap nhân ĐÔI mà ArrayList chỉ 1.5 lần:\n' +
         '// HashMap BẮT BUỘC giữ capacity là luỹ thừa của 2 để dùng phép AND.',
@@ -1914,7 +1916,7 @@ SS.addQuestions('java', [
   essence:
     'Với capacity luỹ thừa của 2, phép AND với n-1 tương đương phép chia dư nhưng nhanh hơn nhiều lần và không bao giờ ra số âm. Đổi lại nó chỉ dùng k bit thấp của hash, nên phần cao bị vứt bỏ hoàn toàn.',
   example:
-    'Nếu key là số nguyên bội của 16 — như id sinh theo lô, hay địa chỉ bộ nhớ đã căn chỉnh — thì bốn bit thấp của chúng luôn là 0. Mọi key dồn vào bucket 0, và `HashMap` trở thành một danh sách liên kết.',
+    'Nếu key là số nguyên bội của 16 — như id sinh theo lô, hay địa chỉ bộ nhớ đã căn chỉnh — thì bốn bit thấp của chúng luôn là 0. Với bảng 16 ô, mọi key dồn vào bucket 0. Bảng lớn hơn cũng chỉ dùng khoảng 1/16 số bucket nếu id chưa có bit từ 16 trở lên.',
   demo: [
     {
       lang: 'java',
@@ -1937,12 +1939,12 @@ SS.addQuestions('java', [
         '    @Override public int hashCode() { return (int) id; }\n' +
         '}\n' +
         '// id = 16, 32, 48, 64 ... -> 4 bit thấp LUÔN là 0000\n' +
-        '// -> (n-1) & hash == 0 với mọi key -> TẤT CẢ vào bucket 0\n' +
-        '// -> HashMap thoái hoá thành linked list, get() = O(n)\n' +
+        '// -> với n = 16: (n-1) & hash == 0 -> TẤT CẢ vào bucket 0\n' +
+        '// -> n lớn hơn: chỉ khoảng 1/16 số bucket được dùng, collision vẫn cao\n' +
         '\n' +
         '// May là bước h ^ (h >>> 16) trộn bit cao xuống, giảm nhẹ tình huống này.\n' +
         '// Nhưng cách chữa đúng vẫn là viết hashCode() phân bố tốt:\n' +
-        '//   @Override public int hashCode() { return Long.hashCode(id); }',
+        '//   @Override public int hashCode() { return Long.hashCode(id >>> 4); }   // id luôn là bội của 16',
     },
   ],
 },
@@ -2034,7 +2036,7 @@ SS.addQuestions('java', [
       { to: 0, label: 'lấy hashCode: 32 bit, chất lượng phân bố tuỳ từng class' },
       { to: 1, label: 'dịch phải KHÔNG DẤU 16 bit, đưa nửa cao xuống nửa thấp' },
       { to: 2, label: 'XOR hai giá trị — từ giờ bit cao có ảnh hưởng tới bit thấp' },
-      { to: 3, label: 'giữ k bit thấp làm chỉ số bucket; nhờ bước trộn, hai hash chỉ khác nhau ở bit cao không còn dồn vào một ô' },
+      { to: 3, label: 'giữ k bit thấp làm chỉ số bucket; nhờ bước trộn, khác biệt ở các bit từ 16 trở lên có thể đi xuống vùng bit được dùng' },
     ],
   },
   demo: [
@@ -2049,17 +2051,18 @@ SS.addQuestions('java', [
         '}\n' +
         '\n' +
         '// VÍ DỤ: hashCode chỉ khác nhau ở BIT CAO\n' +
-        'int a = 0b0001_0000_0000_0000_0000_0000_0000_0101;   // khác ở bit 28\n' +
-        'int b = 0b0010_0000_0000_0000_0000_0000_0000_0101;   // khác ở bit 29\n' +
+        'int a = 0b0000_0000_0000_0001_0000_0000_0000_0101;   // bật bit 16\n' +
+        'int b = 0b0000_0000_0000_0010_0000_0000_0000_0101;   // bật bit 17\n' +
         '\n' +
         '// KHÔNG trộn, capacity 16:\n' +
         'a & 15;                    // 5\n' +
         'b & 15;                    // 5   <- COLLISION dù hash rất khác nhau\n' +
         '\n' +
         '// CÓ trộn:\n' +
-        '(a ^ (a >>> 16)) & 15;     // 5 ^ (bit 12 của a) -> khác\n' +
-        '(b ^ (b >>> 16)) & 15;     // 5 ^ (bit 13 của b) -> khác\n' +
+        '(a ^ (a >>> 16)) & 15;     // 5 ^ 1 = 4\n' +
+        '(b ^ (b >>> 16)) & 15;     // 5 ^ 2 = 7\n' +
         '// -> hai key vào hai bucket khác nhau.\n' +
+        '// Với bảng 2^k ô, chỉ các bit từ 16 đến 15 + k mới được trộn vào chỉ số bucket.\n' +
         '\n' +
         '// VÌ SAO chỉ 1 phép XOR mà không dùng hàm băm mạnh (MurmurHash...)?\n' +
         '//   - hàm này chạy trong MỌI lần get/put -> chi phí nhân lên hàng triệu\n' +
@@ -2122,7 +2125,7 @@ SS.addQuestions('java', [
     '\n' +
     '## 3. Hậu quả đầy đủ\n' +
     '\n' +
-    'Không chỉ `get` trả `null`. Entry đó trở thành **không thể xoá**: `remove(user)` cũng tìm sai bucket. Nó chiếm bộ nhớ vĩnh viễn cho tới khi cả map bị thu hồi — một dạng rò rỉ bộ nhớ thật sự.\n' +
+    'Không chỉ `get` trả `null`. Entry đó **không xoá được bằng `remove(user)`**, vì lời gọi này cũng tìm sai bucket. Nếu không dọn qua iterator hoặc `keySet().removeIf(...)`, nó nằm lại tới khi cả map bị thu hồi — một dạng rò rỉ bộ nhớ thật sự.\n' +
     '\n' +
     'Và `keySet()` vẫn duyệt ra nó, khiến việc gỡ lỗi càng khó tin: bạn nhìn thấy key ngay trước mắt nhưng `get` vẫn trả `null`.\n' +
     '\n' +
@@ -2134,7 +2137,7 @@ SS.addQuestions('java', [
     '\n' +
     'Trường hợp hay gặp trong thực tế là **JPA entity**: `id` còn `null` khi chưa persist, rồi được gán sau khi flush — hash đổi ngay giữa vòng đời. Đó là lý do không nên dùng entity làm key trong `HashSet`/`HashMap`, hoặc nếu buộc phải thì `equals`/`hashCode` chỉ dùng khoá nghiệp vụ bất biến.',
   essence:
-    'Sửa field tham gia tính hash sau khi đã put khiến object nằm ở bucket cũ trong khi HashMap tìm ở bucket mới: get trả null, remove cũng không xoá được, và entry rò rỉ vĩnh viễn. Vì vậy key phải là immutable ở phần dùng cho equals/hashCode.',
+    'Sửa field tham gia tính hash sau khi đã put khiến object nằm ở bucket cũ trong khi HashMap tìm ở bucket mới: get trả null, remove(key) cũng không xoá được, và entry có thể bị rò rỉ. Vì vậy key phải là immutable ở phần dùng cho equals/hashCode.',
   example:
     'Rất hay gặp với JPA: bạn `put` một entity chưa persist vào `HashSet`, `id` đang là `null`. Sau `flush`, Hibernate gán `id` và `hashCode()` đổi. Từ lúc đó `set.contains(entity)` trả `false` cho chính object vừa thêm vào.',
   demo: [
@@ -2201,7 +2204,7 @@ SS.addQuestions('java', [
     '- **Sai `size`.** `size++` không nguyên tử, nên số đếm lệch dần, kéo theo resize sai thời điểm.\n' +
     '- **Vòng lặp vô tận trong Java 7.** Hai thread cùng resize có thể tạo ra chuỗi node quay vòng, khiến `get()` chạy mãi và CPU đứng ở 100%. Đây là sự cố production nổi tiếng.\n' +
     '\n' +
-    'Java 8 đã loại bỏ được vòng lặp đó bằng cách đổi sang chèn cuối chuỗi, nhưng hai vấn đề đầu vẫn còn nguyên. `HashMap` vẫn hoàn toàn không thread-safe.\n' +
+    'Java 8 đổi sang chèn cuối chuỗi nên kịch bản đảo chuỗi đó không còn, nhưng hai vấn đề đầu vẫn còn nguyên. Ghi đồng thời còn có thể làm hỏng bucket dạng cây, ném `ClassCastException` hoặc treo thread. `HashMap` vẫn hoàn toàn không thread-safe.\n' +
     '\n' +
     '## 3. Nếu cần concurrent access\n' +
     '\n' +
@@ -2223,7 +2226,7 @@ SS.addQuestions('java', [
     '\n' +
     'Câu tiếp theo sẽ đi vào `ConcurrentHashMap` — và một cạm bẫy mà rất nhiều người mắc phải với nó.',
   essence:
-    'HashMap không thread-safe: ghi đồng thời có thể mất dữ liệu, làm sai size, và ở Java 7 còn tạo vòng lặp vô tận khiến CPU đứng 100%. Java 8 xoá được vòng lặp nhưng không làm nó an toàn — cần đồng thời thì dùng ConcurrentHashMap.',
+    'HashMap không thread-safe: ghi đồng thời có thể mất dữ liệu, làm sai size, và ở Java 7 còn tạo vòng lặp vô tận khiến CPU đứng 100%. Từ Java 8 kịch bản đó không còn, nhưng map vẫn có thể hỏng hoặc treo theo cách khác — cần đồng thời thì dùng ConcurrentHashMap.',
   example:
     'Một `HashMap` dùng làm cache tĩnh trong service Spring — mà mỗi request là một thread — là lỗi rất hay gặp. Nó chạy đúng hàng tháng trời với tải thấp, rồi mất bản ghi hoặc treo CPU đúng vào lúc lưu lượng cao nhất.',
   demo: [
@@ -2243,8 +2246,8 @@ SS.addQuestions('java', [
         '// HỎNG 3 (Java 7) — VÒNG LẶP VÔ TẬN sau resize đồng thời\n' +
         '//   chuỗi bị đảo thành  A -> B -> A -> B -> ...\n' +
         '//   get() chạy mãi, CPU 100%, thread không bao giờ thoát\n' +
-        '//   Java 8 sửa bằng cách chèn CUỐI chuỗi -> hết vòng lặp,\n' +
-        '//   nhưng HỎNG 1 và 2 vẫn còn nguyên.\n' +
+        '//   Java 8 chèn CUỐI chuỗi -> hết kịch bản đảo chuỗi này,\n' +
+        '//   nhưng HỎNG 1 và 2 vẫn còn, và bucket dạng cây vẫn có thể treo.\n' +
         '\n' +
         '// BA LỰA CHỌN AN TOÀN — và khác biệt thật sự:\n' +
         'Map<K,V> m1 = new Hashtable<>();                      // cổ, synchronized tất, chậm\n' +
@@ -2328,7 +2331,7 @@ SS.addQuestions('java', [
     '\n' +
     '## 4. Một lưu ý về computeIfAbsent\n' +
     '\n' +
-    'Hàm lambda truyền vào chạy **trong khi bucket đang bị khoá**. Vì vậy tuyệt đối không gọi I/O chậm, không gọi mạng, và đặc biệt không đụng lại chính map đó bên trong lambda — sẽ chết khoá.',
+    'Hàm lambda truyền vào chạy **trong khi bucket đang bị khoá**. Vì vậy tuyệt đối không gọi I/O chậm, không gọi mạng, và đặc biệt không đụng lại chính map đó bên trong lambda — Javadoc cấm việc này, và kết quả có thể là `IllegalStateException: Recursive update` hoặc treo.',
   essence:
     'ConcurrentHashMap cho đọc không khoá và ghi chỉ khoá đúng một bucket, thay vì khoá cả map. Nhưng nó chỉ làm từng thao tác nguyên tử — chuỗi containsKey rồi put vẫn có race, phải dùng putIfAbsent, computeIfAbsent hoặc merge.',
   example:
@@ -2367,7 +2370,7 @@ SS.addQuestions('java', [
         '    return httpClient.get(key);      // I/O chậm -> GIỮ KHOÁ bucket rất lâu\n' +
         '});\n' +
         'map.computeIfAbsent(k, key -> {\n' +
-        '    map.put("khac", 1L);             // đụng lại CHÍNH map -> có thể CHẾT KHOÁ\n' +
+        '    map.put("khac", 1L);             // đụng lại CHÍNH map -> lỗi hoặc treo\n' +
         '    return 1L;\n' +
         '});\n' +
         '// -> lambda phải NGẮN, THUẦN TÍNH TOÁN, không I/O, không đụng lại map.\n' +
@@ -2478,7 +2481,7 @@ SS.addQuestions('java', [
         '// Cách chữa: truyền Comparator vào constructor\n' +
         'var ok = new TreeMap<Item, String>(Comparator.comparing(Item::name));\n' +
         '\n' +
-        '// Chú ý: TreeMap KHÔNG cho phép key null (phải so sánh được),\n' +
+        '// Chú ý: theo thứ tự tự nhiên, TreeMap KHÔNG nhận key null (comparator nullsFirst thì được),\n' +
         '// trong khi HashMap cho phép đúng một key null.',
     },
   ],
@@ -2509,7 +2512,7 @@ SS.addQuestions('java', [
     'Tất cả user có ID từ 100 -> 200\n' +
     '```\n' +
     '\n' +
-    '`TreeMap` phù hợp hơn vì hỗ trợ các operation dựa trên thứ tự và khoảng: `subMap(100, 200)` trả về ngay, còn `HashMap` buộc phải duyệt toàn bộ và lọc.\n' +
+    '`TreeMap` phù hợp hơn vì hỗ trợ các operation dựa trên thứ tự và khoảng: `subMap(100, true, 200, true)` trả về ngay, còn `HashMap` buộc phải duyệt toàn bộ và lọc.\n' +
     '\n' +
     '## 3. Ba điểm khác biệt ít được nhắc\n' +
     '\n' +
@@ -2517,7 +2520,7 @@ SS.addQuestions('java', [
     '\n' +
     '**Đảm bảo so với trung bình.** O(log n) của `TreeMap` là chặn trên chắc chắn; O(1) của `HashMap` là trung bình và có thể xấu đi khi `hashCode()` tồi.\n' +
     '\n' +
-    '**Key null.** `HashMap` chấp nhận đúng một key `null`; `TreeMap` thì không, vì `null` không so sánh được.\n' +
+    '**Key null.** `HashMap` chấp nhận đúng một key `null`; `TreeMap` theo thứ tự tự nhiên thì không, trừ khi comparator hỗ trợ `null`.\n' +
     '\n' +
     '## 4. Còn LinkedHashMap\n' +
     '\n' +
@@ -2542,7 +2545,7 @@ SS.addQuestions('java', [
       ['get / put', 'O(1) trung bình', 'O(1) trung bình', 'O(log n) đảm bảo'],
       ['Thứ tự lặp', 'không đảm bảo', 'thứ tự chèn', 'thứ tự sắp xếp'],
       ['Truy vấn khoảng', 'không', 'không', 'có — subMap, floorKey'],
-      ['Key null', 'một key null', 'một key null', 'không cho phép'],
+      ['Key null', 'một key null', 'một key null', 'không, trừ khi comparator hỗ trợ'],
     ],
   },
   demo: [
@@ -2804,7 +2807,7 @@ SS.addQuestions('java', [
         '// Thực tế trong Java, bạn không tự viết cây này:\n' +
         'TreeMap<Integer, String> map = new TreeMap<>();   // đã là red-black tree\n' +
         'for (int i = 1; i <= 1000; i++) map.put(i, "v" + i);   // vào tăng dần\n' +
-        'map.get(999);   // vẫn ~10 phép so sánh, không phải 999\n' +
+        'map.get(999);   // khoảng 16 phép so sánh, không phải 999\n' +
         '\n' +
         '// VÌ SAO Red-Black chứ không AVL:\n' +
         '//   AVL  : cân bằng chặt -> tìm nhanh hơn, nhưng XOAY NHIỀU khi ghi\n' +
@@ -2848,7 +2851,7 @@ SS.addQuestions('java', [
     '\n' +
     'Chỉ cần đi qua một số node bằng đúng chiều cao cây. Do `height ≈ O(log n)` nên `search = O(log n)`.\n' +
     '\n' +
-    'Con số cụ thể cho dễ hình dung: với 1 triệu phần tử, chiều cao khoảng 20. Hai mươi phép so sánh cho một triệu bản ghi.\n' +
+    'Con số cụ thể cho dễ hình dung: với 1 triệu phần tử, cây cân đối cao khoảng 20, còn giới hạn của cây đỏ-đen là khoảng 40. Chỉ vài chục phép so sánh cho một triệu bản ghi.\n' +
     '\n' +
     '## 2. Tổng kết HashMap — phần interviewer rất thích đào\n' +
     '\n' +
@@ -2910,7 +2913,7 @@ SS.addQuestions('java', [
     '\n' +
     'Phần tiếp theo chuyển sang String, Object và Memory — nơi interviewer thường hỏi vì sao `String` immutable, String Pool hoạt động thế nào, và `==` khác `equals()` ra sao.',
   essence:
-    'TreeMap là O(log n) vì cây đỏ-đen giữ chiều cao logarithmic, nên mọi thao tác chỉ đi qua số node bằng chiều cao — một triệu phần tử chỉ khoảng 20 bước. Đây cũng là chốt của mạch HashMap: hashCode, trộn bit, chọn bucket, equals, treeify.',
+    'TreeMap là O(log n) vì cây đỏ-đen giữ chiều cao logarithmic, nên mọi thao tác chỉ đi qua số node bằng chiều cao — một triệu phần tử chỉ cần vài chục bước. Đây cũng là chốt của mạch HashMap: hashCode, trộn bit, chọn bucket, equals, treeify.',
   example:
     'Nếu bạn nhớ được đúng một mạch trả lời cho phần Collections thì hãy nhớ chuỗi này: `hashCode()` chọn bucket, `h ^ (h >>> 16)` để bit cao có ảnh hưởng, `(n-1) & hash` thay phép chia, `equals()` xác nhận key, và treeify là lưới an toàn khi bucket quá dài. Mười câu hỏi đào sâu của người phỏng vấn đều nằm trên chuỗi đó.',
   viz: {
@@ -2919,7 +2922,7 @@ SS.addQuestions('java', [
     unit: 'phép so sánh',
     items: [
       { label: 'HashMap, 1 triệu phần tử', value: 1, note: 'O(1) trung bình — tính bucket rồi so vài node' },
-      { label: 'TreeMap, 1 triệu phần tử', value: 20, note: 'O(log n) đảm bảo — chiều cao khoảng 20' },
+      { label: 'TreeMap, 1 triệu phần tử', value: 20, note: 'O(log n) đảm bảo — khoảng 20 đến 40 bước' },
       { label: 'Bucket đã treeify', value: 3, note: 'O(log k) trong bucket, k là số node của bucket' },
       { label: 'List.contains, 1 triệu', value: 500, note: 'O(n) — vẽ theo thang thu nhỏ' },
     ],
@@ -2930,14 +2933,14 @@ SS.addQuestions('java', [
       title: 'Chiều cao cây quyết định tất cả',
       code:
         '// Chiều cao cây đỏ-đen bị chặn: h <= 2 * log2(n + 1)\n' +
-        '//   n = 1.000        ->  h ~ 10\n' +
-        '//   n = 1.000.000    ->  h ~ 20\n' +
-        '//   n = 1.000.000.000 -> h ~ 30\n' +
-        '// Mỗi bước đi xuống loại bỏ MỘT NỬA số ứng viên còn lại.\n' +
+        '//   n = 1.000        ->  h <= ~20\n' +
+        '//   n = 1.000.000    ->  h <= ~40\n' +
+        '//   n = 1.000.000.000 -> h <= ~60\n' +
+        '// Cây tự cân bằng nên số bước chỉ tăng theo log n.\n' +
         '\n' +
         'TreeMap<Integer, String> map = new TreeMap<>();\n' +
         'for (int i = 0; i < 1_000_000; i++) map.put(i, "v");\n' +
-        'map.get(999_999);      // ~20 phép so sánh, không phải 1 triệu\n' +
+        'map.get(999_999);      // khoảng 37 phép so sánh, không phải 1 triệu\n' +
         '\n' +
         '// ============ MẠCH TRẢ LỜI CHO CẢ PHẦN COLLECTIONS ============\n' +
         '// map.put(key, value)\n' +
@@ -2946,7 +2949,7 @@ SS.addQuestions('java', [
         '//   -> (n - 1) & hash              chọn bucket, cần capacity = 2^k\n' +
         '//   -> bucket rỗng?  chèn\n' +
         '//      collision?     so hash -> equals() -> thay hoặc nối node\n' +
-        '//   -> chuỗi >= 8 và table >= 64?  treeify thành Red-Black Tree\n' +
+        '//   -> thêm vào chuỗi đã có 8 node và table >= 64?  treeify\n' +
         '//   -> size > capacity * 0.75?     resize gấp đôi\n' +
         '//\n' +
         '// Các con số phải thuộc:\n' +

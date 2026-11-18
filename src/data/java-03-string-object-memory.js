@@ -53,7 +53,7 @@ SS.addQuestions('java', [
     '     a     b\n' +
     '```\n' +
     '\n' +
-    'Nếu `String` mutable, `a = "Python"` sẽ kéo theo `b` bị ảnh hưởng. Immutable giải quyết vấn đề này.\n' +
+    'Nếu `String` mutable, một thao tác sửa nội dung qua `a` cũng làm `b` đổi theo, vì hai biến trỏ tới cùng một object. Immutable giải quyết vấn đề này.\n' +
     '\n' +
     '**Thread safety.** Nhiều thread đọc cùng một `String` mà không thread nào thay đổi được nội dung:\n' +
     '\n' +
@@ -72,7 +72,7 @@ SS.addQuestions('java', [
     '```\n' +
     'final class String              // không kế thừa để phá được\n' +
     'private final byte[] value      // mảng nội dung là private final\n' +
-    'không có method nào sửa mảng    // mọi method đều trả về String mới\n' +
+    'không có method nào sửa mảng    // cần đổi nội dung thì trả về String khác\n' +
     '```\n' +
     '\n' +
     'Ba lớp bảo vệ, thiếu một là hỏng. Đặc biệt `final class` là cần thiết: nếu kế thừa được, ai đó có thể viết class con ghi đè `substring()` để trả về nội dung khác nhau mỗi lần gọi.\n' +
@@ -88,13 +88,13 @@ SS.addQuestions('java', [
     layers: [
       { name: 'final class String', tag: 'không kế thừa được', note: 'ngăn class con ghi đè method để trả nội dung khác nhau' },
       { name: 'private final byte[] value', tag: 'mảng bị khoá', note: 'không ai bên ngoài lấy được tham chiếu tới mảng thật' },
-      { name: 'mọi method trả String mới', tag: 'không sửa tại chỗ', note: 'substring, replace, toUpperCase đều tạo object mới' },
+      { name: 'không method nào sửa tại chỗ', tag: 'trả String khác khi cần đổi', note: 'không có gì đổi thì có thể trả chính object đó' },
     ],
   },
   demo: [
     {
       lang: 'java',
-      title: 'Mọi method của String đều trả về object mới',
+      title: 'Method của String không sửa object hiện tại',
       code:
         'String s = "Hello";\n' +
         's.concat(" World");        // trả về String MỚI\n' +
@@ -111,7 +111,7 @@ SS.addQuestions('java', [
         'public final class String {              // 1. final -> không kế thừa\n' +
         '    private final byte[] value;          // 2. mảng private final\n' +
         '    private int hash;                    //    hash được CACHE lại\n' +
-        '    // 3. không method nào sửa value, tất cả trả về String mới\n' +
+        '    // 3. không method nào sửa value, cần đổi thì trả String khác\n' +
         '}\n' +
         '\n' +
         '// VÌ SAO CẦN final class: nếu kế thừa được thì\n' +
@@ -205,7 +205,7 @@ SS.addQuestions('java', [
     '\n' +
     'Từ Java 7, String Pool nằm trong **heap** chứ không còn ở PermGen — nhờ vậy nó được GC dọn và không còn gây `OutOfMemoryError: PermGen space` như trước.\n' +
     '\n' +
-    'Method `intern()` cho phép đưa một chuỗi vào pool thủ công, nhưng hãy cẩn thận: pool là một bảng băm cố định kích thước, `intern()` hàng triệu chuỗi khác nhau sẽ làm nó thoái hoá.\n' +
+    'Method `intern()` cho phép đưa một chuỗi vào pool thủ công, nhưng hãy cẩn thận: pool là một bảng băm do JVM quản lý. JDK 17 tự mở rộng được bảng này, nhưng `intern()` hàng triệu chuỗi khác nhau vẫn tốn bộ nhớ và CPU.\n' +
     '\n' +
     'Và bài học thực dụng nhất: **đừng bao giờ dùng `==` để so sánh `String`**. Nó có thể đúng trong test rồi sai trên production, chỉ vì chuỗi ở production đến từ database chứ không phải từ literal.',
   essence:
@@ -258,8 +258,8 @@ SS.addQuestions('java', [
         '\n' +
         '// Từ Java 7 pool nằm trong HEAP (trước đó ở PermGen)\n' +
         '// -> được GC dọn, không còn OutOfMemoryError: PermGen space.\n' +
-        '// Cẩn thận với intern(): pool là bảng băm kích thước cố định,\n' +
-        '// intern hàng triệu chuỗi khác nhau sẽ làm nó thoái hoá.',
+        '// Cẩn thận với intern(): pool là bảng băm do JVM quản lý; JDK 17 tự mở rộng được,\n' +
+        '// nhưng intern hàng triệu chuỗi khác nhau vẫn tốn bộ nhớ và CPU.',
     },
   ],
 },
@@ -344,7 +344,7 @@ SS.addQuestions('java', [
   essence:
     'Nối String trong vòng lặp là O(n²) vì mỗi lần phải copy lại toàn bộ nội dung; StringBuilder dùng buffer mutable nên chỉ là O(n). Nhưng nối trong một biểu thức đơn thì compiler đã tự tối ưu — chỗ cần sửa chỉ là vòng lặp.',
   example:
-    'Ghép 10.000 dòng CSV bằng `s += line` phải copy khoảng 50 triệu ký tự và tạo 10.000 object rác — mất vài giây. Cùng công việc đó với `StringBuilder` mất vài mili giây. Đây là tối ưu rẻ nhất mà bạn có thể làm cho một job xử lý văn bản.',
+    'Ghép 10.000 đoạn, mỗi đoạn 5 ký tự, bằng `s += line` phải copy khoảng 250 triệu ký tự và tạo 10.000 object rác — đo trên JDK 17 mất khoảng vài trăm mili giây. Cùng công việc đó với `StringBuilder` chỉ mất vài mili giây, và dòng càng dài thì chênh lệch càng lớn. Đây là tối ưu rẻ nhất mà bạn có thể làm cho một job xử lý văn bản.',
   demo: [
     {
       lang: 'java',
@@ -360,7 +360,7 @@ SS.addQuestions('java', [
         'for (String line : lines) {\n' +
         '    s += line + "\\n";      // mỗi vòng: tạo StringBuilder MỚI,\n' +
         '}                          // copy TOÀN BỘ s, rồi vứt đi\n' +
-        '// 10.000 dòng x 5 ký tự -> copy ~50 TRIỆU ký tự  ->  O(n^2)\n' +
+        '// 10.000 dòng x 5 ký tự -> copy ~250 TRIỆU ký tự  ->  O(n^2)\n' +
         '\n' +
         '// ĐÚNG\n' +
         'StringBuilder sb = new StringBuilder(lines.size() * 32);   // đặt trước capacity\n' +
@@ -759,7 +759,7 @@ SS.addQuestions('java', [
     '- Nó làm chậm quá trình thu hồi object\n' +
     '- Exception ném ra trong đó bị nuốt im lặng\n' +
     '\n' +
-    'Không nên dựa vào `finalize()` để cleanup resource. Từ Java 18 nó bị deprecated for removal, và Java 21 đã tắt mặc định.\n' +
+    'Không nên dựa vào `finalize()` để cleanup resource. Từ Java 18 nó bị deprecated for removal. Finalization vẫn bật mặc định, và có thể tắt bằng `--finalization=disabled` để kiểm tra ứng dụng.\n' +
     '\n' +
     '## 4. Một cạm bẫy của finally\n' +
     '\n' +
@@ -775,7 +775,7 @@ SS.addQuestions('java', [
     '\n' +
     'Hàm trả về `"ok"` như thể mọi chuyện bình thường. Đây là một trong những cách giấu lỗi hiệu quả nhất — và tệ nhất.',
   essence:
-    'final là từ khoá khoá biến/method/class, finally là block luôn chạy để dọn dẹp, finalize() là cơ chế GC cũ đã bị loại bỏ. Cạm bẫy đáng nhớ nhất: return bên trong finally sẽ nuốt mất exception đang được ném.',
+    'final là từ khoá khoá biến/method/class, finally là block luôn chạy để dọn dẹp, finalize() là cơ chế GC cũ đang chờ bị loại bỏ. Cạm bẫy đáng nhớ nhất: return bên trong finally sẽ nuốt mất exception đang được ném.',
   example:
     'Thay vì `finally { conn.close(); }` — vốn có thể ném exception mới và che mất lỗi gốc — hãy dùng `try (var conn = ds.getConnection())`. Java sẽ đóng tự động và gắn lỗi lúc đóng vào phần *suppressed* của exception gốc, nên bạn không mất thông tin nào.',
   demo: [
@@ -803,7 +803,7 @@ SS.addQuestions('java', [
         '@Override protected void finalize() { file.close(); }   // deprecated\n' +
         '// Vì: không đảm bảo được gọi, không biết bao giờ, làm chậm thu hồi\n' +
         '// object, và exception ném ra bị nuốt im lặng.\n' +
-        '// Java 18 deprecated for removal, Java 21 tắt mặc định.\n' +
+        '// Java 18 deprecated for removal; mặc định vẫn bật, tắt bằng --finalization=disabled.\n' +
         '\n' +
         '// CÁCH ĐÚNG HÔM NAY — try-with-resources\n' +
         'try (var conn = ds.getConnection();\n' +
@@ -860,7 +860,7 @@ SS.addQuestions('java', [
     'Integer.max(10, 20);\n' +
     '```\n' +
     '\n' +
-    'Và một khác biệt quan trọng về ngữ nghĩa: **wrapper có thể `null`, primitive thì không**. Đó là lý do entity JPA nên dùng `Integer` chứ không phải `int` cho cột cho phép `NULL` — với `int`, giá trị `NULL` trong database sẽ thành `0` và bạn không phân biệt được "không có" với "bằng không".\n' +
+    'Và một khác biệt quan trọng về ngữ nghĩa: **wrapper có thể `null`, primitive thì không**. Đó là lý do entity JPA nên dùng `Integer` chứ không phải `int` cho cột cho phép `NULL` — với `int`, Hibernate ném `PropertyAccessException` khi nạp dòng có `NULL`. Còn với JDBC thuần, `ResultSet.getInt` trả `0`, nên bạn phải kiểm tra thêm `wasNull()` để phân biệt "không có" với "bằng không".\n' +
     '\n' +
     '## 3. Cái giá\n' +
     '\n' +
@@ -880,7 +880,7 @@ SS.addQuestions('java', [
   essence:
     'Wrapper là phiên bản object của primitive, cần thiết vì generic và collection chỉ làm việc với kiểu tham chiếu. Khác biệt ngữ nghĩa quan trọng nhất là wrapper có thể null; cái giá là tốn khoảng năm lần bộ nhớ và tạo áp lực cho GC.',
   example:
-    'Một entity JPA có cột `discount_percent` cho phép `NULL`. Nếu khai là `int`, Hibernate đưa `NULL` thành `0` và hệ thống hiểu nhầm thành "giảm giá 0%" thay vì "chưa thiết lập". Khai là `Integer` giữ đúng ngữ nghĩa.',
+    'Một entity JPA có cột `discount_percent` cho phép `NULL`. Nếu khai là `int`, Hibernate ném `PropertyAccessException` khi nạp dòng có `NULL`. Khai là `Integer` giữ được ý nghĩa "chưa thiết lập".',
   demo: [
     {
       lang: 'java',
@@ -893,8 +893,8 @@ SS.addQuestions('java', [
         '\n' +
         '// KHÁC BIỆT NGỮ NGHĨA: wrapper có thể null\n' +
         '@Entity class Product {\n' +
-        '    private int discountPercent;       // SAI: NULL trong DB -> 0\n' +
-        '                                       // không phân biệt "chưa đặt" với "0%"\n' +
+        '    private int discountPercent;       // SAI: NULL trong DB -> PropertyAccessException\n' +
+        '                                       // (JDBC thuần: getInt trả 0, cần wasNull())\n' +
         '    private Integer discountPercent2;  // ĐÚNG: null nghĩa là chưa thiết lập\n' +
         '}\n' +
         '\n' +
@@ -1559,9 +1559,9 @@ SS.addQuestions('java', [
     '\n' +
     '- Không kế thừa được class khác (`record` đã ngầm extends `Record`), nhưng implement interface thì được.\n' +
     '- Mọi field đều `final`, không thêm được field instance nào khác.\n' +
-    '- Vì thế **không dùng làm JPA entity** — Hibernate cần constructor rỗng và setter.\n' +
+    '- Vì thế **không dùng làm JPA entity** — đặc tả JPA yêu cầu constructor không tham số, class và persistent field không `final`.\n' +
     '\n' +
-    'Ngược lại, `record` kết hợp rất tốt với `sealed interface` và `switch` pattern matching — bộ ba đó là cách mô hình hoá dữ liệu hiện đại trong Java.',
+    'Ngược lại, `record` kết hợp rất tốt với `sealed interface` và `switch` pattern matching (Java 21) — bộ ba đó là cách mô hình hoá dữ liệu hiện đại trong Java.',
   essence:
     'record sinh sẵn constructor, accessor, equals, hashCode và toString cho các object mang dữ liệu, và equals/hashCode luôn nhất quán. Nhưng nó chỉ bất biến ở mức tham chiếu — field kiểu List vẫn sửa được, phải dùng compact constructor để sao chép phòng vệ.',
   example:
@@ -1597,9 +1597,9 @@ SS.addQuestions('java', [
         '// GIỚI HẠN:\n' +
         '//  - không extends class khác (đã ngầm extends Record); implements thì được\n' +
         '//  - mọi field final, không thêm field instance\n' +
-        '//  - KHÔNG dùng làm JPA entity: Hibernate cần constructor rỗng + setter\n' +
+        '//  - KHÔNG dùng làm JPA entity: JPA cần constructor không tham số, class/field không final\n' +
         '\n' +
-        '// KẾT HỢP RẤT TỐT với sealed + pattern matching:\n' +
+        '// KẾT HỢP RẤT TỐT với sealed + pattern matching (switch pattern: Java 21+):\n' +
         'sealed interface Shape permits Circle, Rect { }\n' +
         'record Circle(double r)            implements Shape { }\n' +
         'record Rect(double w, double h)    implements Shape { }\n' +
@@ -1760,8 +1760,8 @@ SS.addQuestions('java', [
         '}\n' +
         '\n' +
         '// CẠM BẪY LƯU TRỮ: đừng bao giờ lưu ordinal()\n' +
-        '@Enumerated(EnumType.ORDINAL)   // SAI: chèn hằng mới vào giữa\n' +
-        '@Enumerated(EnumType.STRING)    // ĐÚNG   -> mọi dữ liệu cũ đọc sai\n' +
+        '@Enumerated(EnumType.ORDINAL)   // SAI: chèn hằng mới vào giữa -> dữ liệu cũ đọc sai\n' +
+        '@Enumerated(EnumType.STRING)    // ĐÚNG: lưu tên hằng\n' +
         'private OrderStatus status;\n' +
         '\n' +
         '// CẤU TRÚC CHUYÊN DỤNG — nhanh hơn HashMap/HashSet nhiều\n' +

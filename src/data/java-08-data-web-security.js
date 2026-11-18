@@ -62,11 +62,11 @@ SS.addQuestions('java', [
   q: 'Persistence context (first-level cache) và dirty checking hoạt động thế nào?',
   answer:
     'Persistence context là một `Map<EntityKey, Entity>` gắn với transaction. Trong cùng transaction, `findById(1)` hai lần trả về **cùng một object** (không query lần hai) — đó là first-level cache, luôn bật, không tắt được.\n\n' +
-    'Khi load, Hibernate chụp lại "snapshot" các field. Lúc **flush** (trước commit, trước query, hoặc gọi tay), nó so sánh state hiện tại với snapshot → sinh UPDATE cho field đã đổi. Không cần gọi `save()`.',
+    'Khi load, Hibernate chụp lại "snapshot" các field. Lúc **flush** (trước commit, trước query, hoặc gọi tay), nó so sánh state hiện tại với snapshot → sinh UPDATE khi có field đổi. Mặc định câu UPDATE set mọi cột trừ định danh; muốn chỉ gồm cột đã đổi thì dùng `@DynamicUpdate`. Không cần gọi `save()`.',
   essence:
     'Persistence context vừa là cache trong-transaction vừa là "unit of work" gom thay đổi. Dirty checking khiến `setter` trên entity managed đủ để cập nhật DB.',
   example:
-    '`@Transactional void deactivate(Long id){ User u = repo.findById(id).orElseThrow(); u.setActive(false); }` — không có `save()` nào, nhưng khi method kết thúc, Hibernate flush và chạy `UPDATE users SET active=false WHERE id=?`.',
+    '`@Transactional void deactivate(Long id){ User u = repo.findById(id).orElseThrow(); u.setActive(false); }` — không có `save()` nào, nhưng khi method kết thúc, Hibernate flush và chạy `UPDATE` cho dòng đó.',
   viz: {
     type: 'flow',
     title: 'Dirty checking — không cần save()',
@@ -76,7 +76,7 @@ SS.addQuestions('java', [
       { to: 1, label: 'Hibernate lưu snapshot giá trị field lúc load' },
       { to: 2, label: 'code gọi u.setActive(false) — không gọi save()' },
       { to: 4, label: 'lúc flush: so state hiện tại với snapshot' },
-      { to: 5, label: 'field đã đổi → sinh UPDATE cho đúng cột đó' },
+      { to: 5, label: 'có field đổi → sinh UPDATE cho entity đó' },
     ],
   },
   demo: [
@@ -121,11 +121,11 @@ SS.addQuestions('java', [
   answer:
     '`FetchType.LAZY`: quan hệ chỉ được load khi truy cập lần đầu (Hibernate dùng proxy). `EAGER`: load ngay cùng entity cha.\n\n' +
     'Mặc định: `@ManyToOne`/`@OneToOne` là EAGER, `@OneToMany`/`@ManyToMany` là LAZY. Khuyến nghị: đặt **tất cả LAZY**, chỉ fetch khi cần.\n\n' +
-    '`LazyInitializationException`: truy cập quan hệ lazy khi persistence context đã đóng (ngoài `@Transactional`, ví dụ ở tầng controller hoặc khi serialize JSON).',
+    '`LazyInitializationException`: truy cập quan hệ lazy khi persistence context đã đóng. Trong Spring Boot, `spring.jpa.open-in-view` mặc định bật nên request web thường không ném lỗi này mà âm thầm query thêm; tắt nó thì lỗi mới lộ ra ở controller hoặc khi serialize JSON.',
   essence:
     'Lazy hoãn truy vấn để tránh kéo dữ liệu thừa, nhưng dữ liệu chỉ lấy được khi session còn mở. Lỗi này là dấu hiệu bạn đang cố dùng entity ngoài ranh giới transaction.',
   example:
-    'Controller trả thẳng `order` có `List<Item> items` LAZY → Jackson serialize chạm `items` ngoài transaction → exception. Sửa: map sang DTO **trong** service (còn transaction), hoặc dùng fetch join/`@EntityGraph`.',
+    'Với `open-in-view=false`, controller trả thẳng `order` có `List<Item> items` LAZY → Jackson serialize chạm `items` ngoài transaction → exception. Sửa: map sang DTO **trong** service (còn transaction), hoặc dùng fetch join/`@EntityGraph`.',
   viz: {
     type: 'compare',
     cols: ['FetchType.LAZY', 'FetchType.EAGER'],
@@ -157,7 +157,7 @@ SS.addQuestions('java', [
         "}                                                 // -> no Session\n" +
         "\n" +
         "// CHỮA 1 (tốt nhất): fetch join — lấy đúng thứ cần, trong MỘT câu truy vấn\n" +
-        "@Query(\"SELECT o FROM Order o JOIN FETCH o.lines WHERE o.id = :id\")\n" +
+        "@Query(\"SELECT o FROM Order o LEFT JOIN FETCH o.lines WHERE o.id = :id\")\n" +
         "Optional<Order> findWithLines(@Param(\"id\") Long id);\n" +
         "\n" +
         "// CHỮA 2: entity graph — khai báo, không phải sửa JPQL\n" +
@@ -228,13 +228,10 @@ SS.addQuestions('java', [
         "@EntityGraph(attributePaths = \"customer\")\n" +
         "List<Order> findAll();\n" +
         "\n" +
-        "// CÁCH 3: @BatchSize — gom N câu thành N/size câu IN (...)\n" +
+        "// CÁCH 3: @BatchSize trên ENTITY ĐÍCH — gom N câu thành N/size câu IN (...)\n" +
         "@Entity\n" +
-        "class Order {\n" +
-        "    @ManyToOne(fetch = FetchType.LAZY)\n" +
-        "    @BatchSize(size = 50)                     // 100 câu -> 2 câu\n" +
-        "    private Customer customer;\n" +
-        "}\n" +
+        "@BatchSize(size = 50)                         // 100 customer -> 2 câu\n" +
+        "class Customer { }\n" +
         "// Hoặc bật toàn cục: spring.jpa.properties.hibernate.default_batch_fetch_size=50\n" +
         "\n" +
         "// CÁCH 4: chiếu thẳng sang DTO — không nạp entity, thường là nhanh nhất\n" +
@@ -431,10 +428,12 @@ SS.addQuestions('java', [
         "\n" +
         "    @Lock(LockModeType.PESSIMISTIC_WRITE)          // SELECT ... FOR UPDATE\n" +
         "    @QueryHints(@QueryHint(name = \"jakarta.persistence.lock.timeout\", value = \"3000\"))\n" +
-        "    Optional<Product> findByIdForUpdate(Long id);\n" +
+        "    @Query(\"SELECT p FROM Product p WHERE p.id = :id\")   // tên này không phải derived query\n" +
+        "    Optional<Product> findByIdForUpdate(@Param(\"id\") Long id);\n" +
         "\n" +
         "    @Lock(LockModeType.PESSIMISTIC_READ)           // SELECT ... FOR SHARE\n" +
-        "    Optional<Product> findByIdShared(Long id);\n" +
+        "    @Query(\"SELECT p FROM Product p WHERE p.id = :id\")\n" +
+        "    Optional<Product> findByIdShared(@Param(\"id\") Long id);\n" +
         "}\n" +
         "\n" +
         "// CHỌN THẾ NÀO:\n" +
@@ -493,7 +492,7 @@ SS.addQuestions('java', [
         "repo.saveAndFlush(o);    // ép SQL xuống DB NGAY\n" +
         "\n" +
         "// Khi nào cần saveAndFlush:\n" +
-        "//  - cần đọc lại bằng native query (native query KHÔNG kích hoạt flush tự động)\n" +
+        "//  - cần SQL đã chạy trước khi gọi code JDBC không đi qua EntityManager\n" +
         "//  - muốn bắt lỗi ràng buộc (unique, FK) ngay tại chỗ để xử lý\n" +
         "//  - trong test, muốn kiểm chứng SQL thật sự chạy\n" +
         "// LƯU Ý: flush KHÔNG phải commit. Rollback sau flush vẫn huỷ sạch mọi thứ.\n" +
@@ -609,14 +608,15 @@ SS.addQuestions('java', [
         "    }\n" +
         "}\n" +
         "\n" +
-        "// CÁCH 2: interface projection — Spring Data tự sinh, CHỈ SELECT cột cần\n" +
+        "// CÁCH 2: interface projection — bản CLOSED mới CHỈ SELECT cột cần\n" +
         "public interface OrderSummary {\n" +
         "    Long getId();\n" +
         "    BigDecimal getTotal();\n" +
-        "    @Value(\"#{target.customer.name}\")      // projection động (mở, kèm rủi ro N+1)\n" +
+        "    @Value(\"#{target.customer.name}\")      // @Value biến nó thành OPEN projection\n" +
         "    String getCustomerName();\n" +
         "}\n" +
-        "List<OrderSummary> findByStatus(String status);   // SQL chỉ lấy id, total\n" +
+        "List<OrderSummary> findByStatus(String status);   // OPEN: Spring Data không tối ưu cột được\n" +
+        "// Bỏ getCustomerName() có @Value thì đây là CLOSED projection, chỉ cần id, total.\n" +
         "\n" +
         "// CÁCH 3: chiếu vào class trong JPQL — kiểm soát chính xác câu SQL\n" +
         "@Query(\"SELECT new com.example.OrderDto(o.id, o.status, o.total, c.name) \" +\n" +
@@ -759,7 +759,7 @@ SS.addQuestions('java', [
         "    public void upload(@RequestPart(\"meta\") Meta meta,\n" +
         "                       @RequestPart(\"file\") MultipartFile file) { }\n" +
         "}\n" +
-        "// LƯU Ý: @PathVariable và @RequestParam mặc định BẮT BUỘC — thiếu là 400.\n" +
+        "// LƯU Ý: cả hai mặc định BẮT BUỘC. Thiếu @RequestParam -> 400; thiếu path variable -> 500.\n" +
         "// Muốn tuỳ chọn thì required = false hoặc dùng Optional/defaultValue.\n" +
         "// Biên dịch không có -parameters thì phải ghi rõ tên: @PathVariable(\"id\").",
     },
@@ -844,8 +844,9 @@ SS.addQuestions('java', [
         "    @ModelAttribute\n" +
         "    void common(Model m) { m.addAttribute(\"version\", buildVersion); }\n" +
         "}\n" +
-        "// Thứ tự: Filter -> DispatcherServlet -> Interceptor.preHandle -> Controller\n" +
-        "//         -> ControllerAdvice (nếu lỗi) -> Interceptor.postHandle -> Filter",
+        "// Bình thường: Filter -> DispatcherServlet -> preHandle -> Controller -> postHandle\n" +
+        "//              -> afterCompletion -> Filter\n" +
+        "// Có lỗi: Controller -> ControllerAdvice -> afterCompletion (BỎ QUA postHandle)",
     },
   ],
 },
@@ -914,7 +915,7 @@ SS.addQuestions('java', [
         "               .build();\n" +
         "}\n" +
         "// PREFLIGHT: trình duyệt gửi OPTIONS trước khi gửi request \"không đơn giản\"\n" +
-        "// (method khác GET/POST/HEAD, hoặc có header tuỳ chỉnh như Authorization).",
+        "// (method khác GET/POST/HEAD, header như Authorization, hoặc Content-Type: application/json).",
     },
   ],
 },
@@ -923,7 +924,7 @@ SS.addQuestions('java', [
   id: 'java-1pbwp6n',
   q: 'Spring Security filter chain và luồng authentication hoạt động thế nào?',
   answer:
-    'Spring Security là một chuỗi **servlet filter** (`SecurityFilterChain`) đứng trước app. Các filter chính: `SecurityContextPersistenceFilter`, `UsernamePasswordAuthenticationFilter` / `BearerTokenAuthenticationFilter`, `ExceptionTranslationFilter`, `AuthorizationFilter`.\n\n' +
+    'Spring Security là một chuỗi **servlet filter** (`SecurityFilterChain`) đứng trước app. Các filter chính: `SecurityContextHolderFilter`, `UsernamePasswordAuthenticationFilter` / `BearerTokenAuthenticationFilter`, `ExceptionTranslationFilter`, `AuthorizationFilter`.\n\n' +
     'Luồng: filter trích credential từ request → tạo `Authentication` (chưa xác thực) → `AuthenticationManager` → `AuthenticationProvider` (ví dụ `DaoAuthenticationProvider` dùng `UserDetailsService` + `PasswordEncoder`) → nếu ok, lưu `Authentication` đã xác thực vào `SecurityContextHolder` (ThreadLocal) → `AuthorizationFilter` kiểm tra quyền theo rule.',
   essence:
     'Xác thực (bạn là ai) xảy ra sớm trong chuỗi filter và kết quả nằm ở `SecurityContextHolder`; phân quyền (bạn được làm gì) xảy ra ngay trước khi vào controller.',
@@ -979,7 +980,7 @@ SS.addQuestions('java', [
         "    PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(12); }\n" +
         "}\n" +
         "// THỨ TỰ RULE QUAN TRỌNG: khớp cái đầu tiên là dừng -> rule cụ thể phải\n" +
-        "// đứng TRƯỚC rule chung. Đặt anyRequest() lên đầu là mở toang mọi thứ.",
+        "// đứng TRƯỚC rule chung. Khai requestMatchers sau anyRequest() sẽ báo lỗi cấu hình.",
     },
   ],
 },
@@ -1107,7 +1108,7 @@ SS.addQuestions('java', [
   essence:
     'Offset đơn giản nhưng chi phí tăng tuyến tính theo số trang. Keyset biến phân trang thành truy vấn range trên index — phù hợp feed/infinite scroll/export lớn.',
   example:
-    'Xuất 2 triệu bản ghi qua API: offset trang 50.000 mất vài giây/lần. Keyset theo `(id)` giữ mỗi lần ~vài ms. Spring Data hỗ trợ `Slice` + `ScrollPosition` (Boot 3.1+) cho keyset.',
+    'Xuất 2 triệu bản ghi qua API: offset trang 50.000 mất vài giây/lần. Keyset theo `(id)` giữ mỗi lần ~vài ms. Spring Data hỗ trợ `Window` + `ScrollPosition` (Boot 3.1+) cho keyset.',
   viz: {
     type: 'compare',
     cols: ['Offset (LIMIT n OFFSET m)', 'Keyset / seek'],
@@ -1216,7 +1217,8 @@ SS.addQuestions('java', [
         "public void demo() {\n" +
         "    Order o = repo.findById(1L).orElseThrow();     // status = \"NEW\", đang managed\n" +
         "    repo.expireOld(\"EXPIRED\", Instant.now());      // DB đã thành \"EXPIRED\"\n" +
-        "    System.out.println(o.getStatus());             // vẫn in \"NEW\" nếu không clear!\n" +
+        "    System.out.println(o.getStatus());             // vẫn in \"NEW\": clear KHÔNG sửa object cũ\n" +
+        "    Order fresh = repo.findById(1L).orElseThrow(); // đọc lại mới thấy \"EXPIRED\"\n" +
         "}\n" +
         "\n" +
         "// Đổi lại: cập nhật 1 triệu dòng bằng một câu UPDATE nhanh hơn hàng nghìn lần\n" +

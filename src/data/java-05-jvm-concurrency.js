@@ -9,7 +9,7 @@ SS.addQuestions('java', [
     '- **Metaspace** (thay PermGen từ Java 8): metadata class, nằm ở native memory, tự co giãn.\n' +
     '- **PC Register**: con trỏ lệnh của mỗi thread.\n' +
     '- **Native Method Stack**: cho method JNI.\n\n' +
-    'String pool nằm trong heap (từ Java 7). Biến static và class object nằm ở Metaspace/heap.',
+    'String pool nằm trong heap (từ Java 7). Metadata của class nằm ở Metaspace; trên HotSpot, object `java.lang.Class` và giá trị biến static nằm trên heap.',
   essence:
     'Chia theo tiêu chí chia sẻ: heap và metaspace dùng chung toàn JVM; stack, PC, native stack là riêng từng thread. Object luôn ở heap, tham chiếu tới nó có thể nằm ở stack.',
   example:
@@ -33,7 +33,7 @@ SS.addQuestions('java', [
       title: "Mỗi biến trong đoạn này nằm ở vùng nhớ nào",
       code:
         "public class Demo {                 // metadata của class -> Metaspace (ngoài heap)\n" +
-        "    static int counter = 0;         // biến static -> vùng static của Metaspace\n" +
+        "    static int counter = 0;         // giá trị static -> HEAP, gắn với Class object (HotSpot)\n" +
         "    private String name;            // field của instance -> nằm cùng object trên HEAP\n" +
         "\n" +
         "    void run(int n) {               // n là tham số -> STACK của thread đang chạy\n" +
@@ -167,7 +167,7 @@ SS.addQuestions('java', [
   answer:
     '- **Serial GC**: một thread, stop-the-world. Phù hợp app nhỏ, heap < ~100MB, môi trường 1 CPU.\n' +
     '- **Parallel GC** (throughput): nhiều thread GC, tối ưu tổng thông lượng, pause có thể dài. Tốt cho batch job.\n' +
-    '- **G1 GC** (mặc định từ Java 9): chia heap thành region, thu gom tăng dần, nhắm mục tiêu pause (`-XX:MaxGCPauseMillis`). Cân bằng cho hầu hết service.\n' +
+    '- **G1 GC** (thường là mặc định từ Java 9; máy ít tài nguyên như 1 CPU thì JVM có thể chọn Serial): chia heap thành region, thu gom tăng dần, nhắm mục tiêu pause (`-XX:MaxGCPauseMillis`). Cân bằng cho hầu hết service.\n' +
     '- **ZGC / Shenandoah**: pause < 1ms gần như không phụ thuộc kích thước heap (heap hàng chục–trăm GB), concurrent gần hết. Cho ứng dụng nhạy latency, heap lớn.',
   essence:
     'Đánh đổi throughput ↔ latency ↔ footprint. Parallel tối đa throughput; G1 cân bằng; ZGC tối thiểu pause. Chọn theo SLA độ trễ và kích thước heap.',
@@ -197,7 +197,7 @@ SS.addQuestions('java', [
         "# Hợp batch job: tổng thời gian chạy quan trọng hơn độ trễ từng request\n" +
         "java -XX:+UseParallelGC -XX:ParallelGCThreads=4 -jar app.jar\n" +
         "\n" +
-        "# G1 — MẶC ĐỊNH từ Java 9. Chia heap thành region, thu region nhiều rác trước\n" +
+        "# G1 — thường là mặc định từ Java 9 (1 CPU thì JVM có thể chọn Serial). Chia heap thành region, thu region nhiều rác trước\n" +
         "# (\"garbage first\"). Cân bằng, có thể đặt mục tiêu pause:\n" +
         "java -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Xmx8g -jar app.jar\n" +
         "\n" +
@@ -205,7 +205,7 @@ SS.addQuestions('java', [
         "# Đổi lại: tốn CPU và RAM hơn. Hợp dịch vụ nhạy độ trễ, heap lớn\n" +
         "java -XX:+UseZGC -Xmx32g -jar app.jar\n" +
         "\n" +
-        "# Quy tắc chọn: heap < 4GB và không nhạy trễ -> cứ để G1 mặc định.\n" +
+        "# Quy tắc chọn: heap < 4GB và không nhạy trễ -> cứ để JVM tự chọn, thường là G1.\n" +
         "# Chỉ đổi collector khi ĐÃ ĐO được pause là nút thắt thật sự.",
     },
   ],
@@ -503,7 +503,7 @@ SS.addQuestions('java', [
         "    public synchronized void b() { }\n" +
         "}\n" +
         "// synchronized đảm bảo CẢ HAI: loại trừ lẫn nhau + hiển thị bộ nhớ\n" +
-        "// (vào khối = đọc mới từ main memory, ra khối = ghi hết xuống main memory).",
+        "// (mở khoá happens-before lần khoá kế tiếp trên cùng monitor).",
     },
   ],
 },
@@ -513,7 +513,7 @@ SS.addQuestions('java', [
   q: '`volatile` đảm bảo gì và KHÔNG đảm bảo gì?',
   answer:
     '`volatile` đảm bảo:\n' +
-    '- **Visibility**: ghi vào biến volatile được flush về main memory ngay, đọc luôn lấy giá trị mới nhất (không đọc từ cache/register của thread).\n' +
+    '- **Visibility**: một lần ghi volatile happens-before các lần đọc sau đó của cùng biến, nên thread đọc thấy giá trị đã ghi.\n' +
     '- **Ordering**: chặn reorder quanh biến volatile (memory barrier); mọi ghi trước điểm ghi volatile hiển thị cho thread đọc volatile đó (happens-before).\n\n' +
     'KHÔNG đảm bảo **atomicity của thao tác kép**: `count++` là read-modify-write, hai thread vẫn ghi đè nhau.',
   essence:
@@ -524,7 +524,7 @@ SS.addQuestions('java', [
     type: 'compare',
     cols: ['volatile ĐẢM BẢO', 'volatile KHÔNG đảm bảo'],
     rows: [
-      ['Visibility', 'ghi flush ngay, đọc lấy giá trị mới nhất', '—'],
+      ['Visibility', 'ghi happens-before các lần đọc sau đó', '—'],
       ['Ordering', 'chặn reorder quanh biến (memory barrier)', '—'],
       ['Atomicity thao tác kép', '—', 'count++ (read-modify-write) vẫn race'],
       ['Dùng cho', 'cờ trạng thái, publish an toàn', 'bộ đếm → dùng AtomicLong / LongAdder'],
@@ -571,14 +571,14 @@ SS.addQuestions('java', [
     '- Mở khoá `synchronized` HB với lần khoá sau đó trên cùng monitor.\n' +
     '- Ghi `volatile` HB với đọc `volatile` sau đó.\n' +
     '- `Thread.start()` HB với mọi hành động trong thread con; mọi hành động trong thread HB với `join()` trả về.\n' +
-    '- Khởi tạo `final` field HB với việc đọc reference object đã khởi tạo xong.',
+    '- Riêng `final` field có quy tắc riêng (final field semantics): nếu `this` không thoát trong constructor, thread khác thấy giá trị đã gán sau khi object dựng xong.',
   essence:
     'Happens-before là "hợp đồng nhìn thấy" giữa các thread. Không nằm trong chuỗi HB nào thì mọi giả định về thứ tự/giá trị đều không an toàn.',
   example:
     'Mẫu sai: thread A set `config` rồi set `ready=true` (không volatile); thread B thấy `ready==true` nhưng vẫn đọc `config==null` do reorder/visibility. Sửa: khai báo `ready` là `volatile` → tạo HB, B thấy cả `config` đã gán.',
   viz: {
     type: 'compare',
-    cols: ['Không happens-before', 'Có happens-before (volatile / synchronized / start-join / final)'],
+    cols: ['Không happens-before', 'Có happens-before (volatile / synchronized / start-join)'],
     rows: [
       ['Compiler / CPU', 'tự do reorder + cache', 'chặn reorder tại điểm đồng bộ'],
       ['Thread khác thấy', 'có thể là giá trị cũ', 'chắc chắn thấy mọi ghi trước điểm đó'],
@@ -608,7 +608,7 @@ SS.addQuestions('java', [
         "// 4) Mọi thứ trong thread happens-before join() trả về\n" +
         "t.join();  read(result);                 // chắc chắn thấy kết quả t đã ghi\n" +
         "\n" +
-        "// 5) Ghi field final trong constructor happens-before object được công bố\n" +
+        "// 5) final field có quy tắc riêng: freeze khi constructor kết thúc\n" +
         "// -> đây là lý do object immutable an toàn khi chia sẻ mà không cần đồng bộ",
     },
   ],
@@ -730,7 +730,9 @@ SS.addQuestions('java', [
         "// CÁCH 2: khoá có timeout -> phá \"giữ-và-chờ\"\n" +
         "if (lockA.tryLock(1, TimeUnit.SECONDS)) {\n" +
         "    try {\n" +
-        "        if (lockB.tryLock(1, TimeUnit.SECONDS)) { }\n" +
+        "        if (lockB.tryLock(1, TimeUnit.SECONDS)) {\n" +
+        "            try { transfer(); } finally { lockB.unlock(); }\n" +
+        "        }\n" +
         "    } finally { lockA.unlock(); }     // nhả hết rồi thử lại sau\n" +
         "}",
     },
@@ -867,7 +869,7 @@ SS.addQuestions('java', [
   essence:
     'CPU-bound bị giới hạn bởi số nhân. IO-bound bị giới hạn bởi tài nguyên phía sau (pool DB, rate limit API), không phải bởi CPU.',
   example:
-    'Pool xử lý ảnh (resize) đặt = số vCPU của pod (ví dụ 4). Pool gọi API đối tác (mỗi call ~200ms chờ) đặt ~40, nhưng chặn ở HikariCP `maximumPoolSize=20` để không làm quá tải DB.',
+    'Pool xử lý ảnh (resize) đặt = số vCPU của pod (ví dụ 4). Pool gọi API đối tác (mỗi call ~200ms chờ) đặt ~40 và giới hạn theo hạn mức của đối tác. Pool có gọi DB thì còn phải tính tới `maximumPoolSize` của HikariCP.',
   viz: {
     type: 'compare',
     cols: ['CPU-bound', 'IO-bound'],
@@ -875,7 +877,7 @@ SS.addQuestions('java', [
       ['Thread ≈', 'số nhân (hoặc +1)', 'cores × (1 + waitTime/computeTime)'],
       ['Thêm thread nữa', 'chỉ tăng context switch', 'tăng thông lượng tới một mức'],
       ['Bị giới hạn bởi', 'số nhân CPU', 'tài nguyên downstream (pool DB, rate limit)'],
-      ['Ví dụ', 'resize ảnh = 4 (số vCPU)', 'gọi API ~40, chặn ở HikariCP 20'],
+      ['Ví dụ', 'resize ảnh = 4 (số vCPU)', 'gọi API ~40, theo hạn mức đối tác'],
     ],
   },
   demo: [
@@ -948,14 +950,14 @@ SS.addQuestions('java', [
         "        .thenApply(User::id)                         // U -> V\n" +
         "        .thenCompose(uid -> loadOrdersAsync(uid));   // U -> CompletableFuture<V>\n" +
         "\n" +
-        "// thenCombine: hai việc chạy SONG SONG rồi gộp kết quả\n" +
+        "// thenCombine: chờ HAI future xong rồi gộp (ở đây ordersF vốn phụ thuộc userF)\n" +
         "CompletableFuture<Profile> profile = userF.thenCombine(ordersF, Profile::new);\n" +
         "\n" +
         "// allOf: chờ tất cả (chú ý: allOf trả về Void, phải join lại từng cái)\n" +
         "CompletableFuture.allOf(userF, ordersF).join();\n" +
         "\n" +
         "// Xử lý lỗi: exceptionally (chỉ khi lỗi) / handle (cả hai) / whenComplete (side-effect)\n" +
-        "profile.orTimeout(2, TimeUnit.SECONDS)             // Java 9+: tự huỷ khi quá hạn\n" +
+        "profile.orTimeout(2, TimeUnit.SECONDS)             // Java 9+: future lỗi khi quá hạn, task nền KHÔNG tự dừng\n" +
         "       .exceptionally(ex -> Profile.empty())       // fallback\n" +
         "       .thenAccept(this::render);\n" +
         "\n" +
@@ -1081,7 +1083,7 @@ SS.addQuestions('java', [
     '- `lockInterruptibly()`: có thể huỷ khi chờ.\n' +
     '- **Fairness** tuỳ chọn (FIFO) thay vì tranh chấp tự do.\n' +
     '- Nhiều `Condition` trên một lock (`newCondition()`) — như nhiều hàng đợi wait/notify.\n\n' +
-    'Đổi lại phải `unlock()` trong `finally` thủ công. `synchronized` gọn hơn, tự nhả khi rời block, JIT tối ưu tốt (biased/lightweight locking), và hiện tại hiệu năng tương đương trong đa số trường hợp.',
+    'Đổi lại phải `unlock()` trong `finally` thủ công. `synchronized` gọn hơn, tự nhả khi rời block, JVM có các tối ưu như lightweight locking và lock elision; biased locking đã tắt mặc định từ Java 15. Đừng chọn giữa hai loại khoá chỉ vì hiệu năng khi chưa đo.',
   essence:
     '`synchronized` = khoá nội tại đơn giản, an toàn khi thoát. `ReentrantLock` = khoá linh hoạt (timeout, interrupt, fairness, nhiều condition) đổi lấy trách nhiệm tự quản lý.',
   example:
@@ -1125,7 +1127,7 @@ SS.addQuestions('java', [
         "\n" +
         "// Điểm trừ: phải tự unlock. Quên finally là treo toàn hệ thống.\n" +
         "// -> mặc định cứ dùng synchronized, chỉ đổi sang ReentrantLock khi cần\n" +
-        "// một trong bốn thứ trên. Từ Java 15, hiệu năng hai bên gần như tương đương.",
+        "// một trong bốn thứ trên. Hiệu năng thì phải đo trên tải thật.",
     },
   ],
 },

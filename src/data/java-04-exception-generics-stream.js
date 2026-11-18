@@ -152,8 +152,8 @@ SS.addQuestions('java', [
       lang: "java",
       title: "Chọn loại exception và bọc lại cho đúng tầng",
       code:
-        "// Unchecked (RuntimeException): lỗi do lập trình sai / vi phạm invariant.\n" +
-        "// Không bắt buộc khai báo, và không nên bắt rồi nuốt.\n" +
+        "// Unchecked (RuntimeException): không ép caller khai báo. Nhiều dự án Spring dùng nó\n" +
+        "// cho lỗi nghiệp vụ như thiếu số dư rồi map sang HTTP ở một nơi. Đừng bắt rồi nuốt.\n" +
         "public class InsufficientBalanceException extends RuntimeException {\n" +
         "    public InsufficientBalanceException(String accountId) {\n" +
         "        super(\"Tài khoản \" + accountId + \" không đủ số dư\");\n" +
@@ -255,7 +255,7 @@ SS.addQuestions('java', [
   id: 'java-1f1t11f',
   q: 'Iterator fail-fast khác fail-safe thế nào, và `ConcurrentModificationException` sinh ra từ đâu?',
   answer:
-    'Iterator **fail-fast** — của `ArrayList`, `HashMap`… — theo dõi một biến đếm tên `modCount`. Nếu collection bị sửa cấu trúc giữa lúc duyệt mà không thông qua `iterator.remove()`, lần gọi `next()` kế tiếp sẽ thấy `modCount` lệch và ném `ConcurrentModificationException` ngay lập tức, kể cả khi chỉ có một thread duy nhất.\n' +
+    'Iterator **fail-fast** — của `ArrayList`, `HashMap`… — theo dõi một biến đếm tên `modCount`. Nếu collection bị sửa cấu trúc giữa lúc duyệt mà không thông qua `iterator.remove()`, lần gọi `next()` kế tiếp, nếu còn xảy ra, sẽ thấy `modCount` lệch và ném `ConcurrentModificationException`, kể cả khi chỉ có một thread duy nhất. Đây chỉ là cơ chế best-effort: vòng lặp có thể kết thúc trước khi kịp phát hiện.\n' +
     '\n' +
     'Iterator **fail-safe** — của `CopyOnWriteArrayList`, `ConcurrentHashMap` — lại duyệt trên một bản snapshot hoặc một weakly-consistent view, nên nó không ném exception nhưng đổi lại có thể không thấy được thay đổi mới nhất.',
   essence:
@@ -281,11 +281,13 @@ SS.addQuestions('java', [
         "\n" +
         "// SAI: sửa collection trong khi for-each đang duyệt\n" +
         "for (String s : list) {\n" +
-        "    if (s.equals(\"b\")) list.remove(s);   // -> ConcurrentModificationException\n" +
+        "    if (s.equals(\"a\")) list.remove(s);   // -> ConcurrentModificationException\n" +
         "}\n" +
         "// Cơ chế: ArrayList giữ biến đếm modCount. Iterator nhớ expectedModCount lúc tạo;\n" +
         "// mỗi lần next() nó so hai giá trị, lệch nhau là ném CME ngay (fail-FAST).\n" +
         "// Đây là cảnh báo lỗi lập trình, KHÔNG phải bảo đảm an toàn luồng.\n" +
+        "// Chú ý: xoá \"b\" (phần tử áp chót) lại KHÔNG ném CME: hasNext() thấy cursor == size\n" +
+        "// nên vòng lặp dừng sớm và bỏ qua \"c\". Đừng dựa vào CME để phát hiện lỗi.\n" +
         "\n" +
         "// Đúng 1: xoá qua chính iterator (nó tự cập nhật expectedModCount)\n" +
         "Iterator<String> it = list.iterator();\n" +
@@ -306,7 +308,7 @@ SS.addQuestions('java', [
   id: 'java-1lvyiqn',
   q: 'Type erasure là gì, và `? extends` khác `? super` thế nào (nguyên tắc PECS)?',
   answer:
-    'Generics của Java chỉ tồn tại ở mức **compile-time**: sau khi biên dịch, thông tin kiểu bị **xoá** đi (erasure), nên `List<String>` và `List<Integer>` đều trở thành `List` ở runtime. Chính vì vậy bạn không viết được `new T[]`, `T.class` hay `instanceof List<String>`.\n' +
+    'Generics của Java chỉ tồn tại ở mức **compile-time**: sau khi biên dịch, thông tin kiểu bị **xoá** đi (erasure), nên `List<String>` và `List<Integer>` đều trở thành `List` ở runtime. Chính vì vậy bạn không viết được `new T[]` hay `T.class`, và không thể dùng `instanceof` để kiểm tra một `Object` có phải `List<String>` hay không.\n' +
     '\n' +
     'Wildcard đi theo nguyên tắc **PECS — Producer Extends, Consumer Super**:\n' +
     '- `List<? extends Number>` chỉ để **đọc** (lấy ra `Number`), không add được gì ngoài null. Đây là nguồn cung cấp dữ liệu.\n' +
@@ -336,7 +338,7 @@ SS.addQuestions('java', [
         "System.out.println(a.getClass() == b.getClass());   // true\n" +
         "\n" +
         "// Hệ quả: những việc sau không làm được\n" +
-        "// if (a instanceof List<String>) {}   // lỗi biên dịch\n" +
+        "// Object x = a; if (x instanceof List<String>) {}   // lỗi biên dịch\n" +
         "// new T[10];                          // không tạo được mảng generic\n" +
         "// class X<T> { static T field; }      // static không dùng được T\n" +
         "\n" +

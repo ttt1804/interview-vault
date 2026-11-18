@@ -18,7 +18,7 @@ SS.addQuestions('java', [
     cols: ['Constructor', 'Setter', 'Field (@Autowired)'],
     rows: [
       ['Phụ thuộc', 'final, bắt buộc', 'tuỳ chọn / cấu hình lại', 'không final được'],
-      ['Thiếu bean', 'phát hiện khi khởi động', 'muộn hơn', 'ẩn'],
+      ['Thiếu bean', 'lỗi khi tạo bean', 'lỗi nếu @Autowired bắt buộc', 'lỗi nếu @Autowired bắt buộc'],
       ['Test', 'new thủ công, dễ', 'gọi setter', 'cần reflection / context'],
       ['Circular dependency', 'lộ ngay (fail)', 'âm thầm chịu được', 'âm thầm chịu được'],
     ],
@@ -329,7 +329,7 @@ SS.addQuestions('java', [
   essence:
     'BFPP thao tác trên "bản thiết kế" (definition) trước khi build. BPP thao tác trên "sản phẩm" (instance) trong lúc build. Đây là cơ chế Spring tự mở rộng chính nó.',
   example:
-    '`@ConfigurationProperties` binding, `@Value` resolution là nhờ BFPP nạp property. `@Transactional`, `@Cacheable`, `@Async` hoạt động là nhờ BPP bọc bean bằng proxy ở `postProcessAfterInitialization`.',
+    '`PropertySourcesPlaceholderConfigurer` là BFPP hỗ trợ resolve `${...}`, còn việc bind `@ConfigurationProperties` và tiêm `@Value` do BPP đảm nhiệm. `@Transactional`, `@Cacheable`, `@Async` hoạt động là nhờ BPP bọc bean bằng proxy ở `postProcessAfterInitialization`.',
   viz: {
     type: 'flow',
     title: 'BFPP thao tác "bản thiết kế", BPP thao tác "sản phẩm"',
@@ -401,7 +401,7 @@ SS.addQuestions('java', [
         "// Spring AOP là proxy LÚC CHẠY, không phải weaving lúc biên dịch như AspectJ.\n" +
         "// - Bean có implement interface  -> JDK dynamic proxy (proxy theo interface)\n" +
         "// - Không có interface           -> CGLIB (sinh class con, nên method/class\n" +
-        "//                                   không được final, và cần constructor gọi được)\n" +
+        "//                                   không được final; instance thường tạo qua Objenesis)\n" +
         "// Spring Boot ép CGLIB mặc định: spring.aop.proxy-target-class=true\n" +
         "\n" +
         "@Aspect\n" +
@@ -441,7 +441,7 @@ SS.addQuestions('java', [
   answer:
     'Một BPP bọc bean bằng proxy; method `@Transactional` được `TransactionInterceptor` bao: mở transaction (qua `PlatformTransactionManager`), gọi method, `commit` nếu bình thường, `rollback` nếu ném exception.\n\n' +
     'Mặc định chỉ rollback với **unchecked exception** (`RuntimeException`, `Error`). **Checked exception KHÔNG rollback** trừ khi khai báo `rollbackFor = Exception.class`.\n\n' +
-    'Không có tác dụng khi: method không `public`; self-invocation; exception bị `catch` và nuốt; class không được Spring quản lý; DB engine không hỗ trợ transaction (MyISAM).',
+    'Không có tác dụng khi: method `private`; method không `public` với JDK proxy hoặc trước Spring 6.0; self-invocation; exception bị `catch` và nuốt; class không được Spring quản lý; DB engine không hỗ trợ transaction (MyISAM).',
   essence:
     '`@Transactional` là advice quanh proxy + quy tắc rollback theo loại exception. "Nuốt exception" hoặc "gọi nội bộ" là hai cách vô hiệu hoá nó mà không báo lỗi.',
   example:
@@ -451,11 +451,11 @@ SS.addQuestions('java', [
     title: '@Transactional = advice quanh proxy',
     nodes: ['gọi proxy', 'mở transaction', 'chạy method', 'ném exception?', 'commit / rollback'],
     steps: [
-      { to: 0, label: 'lời gọi phải đi qua proxy (public, từ bean khác)' },
+      { to: 0, label: 'lời gọi phải đi qua proxy (từ bean khác, method không private)' },
       { to: 1, label: 'TransactionInterceptor mở tx qua PlatformTransactionManager' },
       { to: 2, label: 'thân method chạy' },
       { to: 3, label: 'unchecked (RuntimeException/Error) → rollback; checked → COMMIT trừ khi rollbackFor' },
-      { to: 4, label: 'không tác dụng nếu: nuốt exception, self-invocation, method không public' },
+      { to: 4, label: 'không tác dụng nếu: nuốt exception, self-invocation, method private' },
     ],
   },
   demo: [
@@ -480,8 +480,8 @@ SS.addQuestions('java', [
         "    // BẪY 2: self-invocation — gọi this.place() không qua proxy -> không có transaction\n" +
         "    public void wrapper() { place(o); }             // KHÔNG có transaction\n" +
         "\n" +
-        "    // BẪY 3: method không public. Với proxy CGLIB, private/protected/package-private\n" +
-        "    // bị bỏ qua im lặng, không báo lỗi gì.\n" +
+        "    // BẪY 3: method private không được proxy chặn. Từ Spring 6.0, class-based proxy\n" +
+        "    // hỗ trợ protected/package-private; JDK proxy vẫn chỉ chặn method public của interface.\n" +
         "    @Transactional\n" +
         "    private void hidden() { }                       // vô tác dụng\n" +
         "\n" +
@@ -560,21 +560,22 @@ SS.addQuestions('java', [
   id: 'java-2dh2vp',
   q: '`@Autowired` resolve bean thế nào khi có nhiều ứng viên?',
   answer:
-    'Thứ tự: (1) khớp theo **kiểu**; (2) nếu nhiều ứng viên, lọc theo `@Primary`; (3) nếu vẫn nhiều, so khớp `@Qualifier("name")` hoặc **tên field/param** với tên bean; (4) không giải quyết được → `NoUniqueBeanDefinitionException`.\n\n' +
+    'Thứ tự: (1) khớp theo **kiểu**; (2) nếu có `@Qualifier("name")`, chỉ giữ ứng viên khớp; (3) nếu còn nhiều, chọn `@Primary`; (4) nếu vẫn nhiều, so **tên field/param** với tên bean, `@Priority` cũng có thể tham gia và thứ tự giữa hai cách này tuỳ phiên bản Spring; (5) không giải quyết được → `NoUniqueBeanDefinitionException`.\n\n' +
     '`@Primary`: đánh dấu bean "mặc định" khi mơ hồ. `@Qualifier`: chỉ định chính xác tại điểm tiêm, **ưu tiên cao hơn** `@Primary`.\n\n' +
     '`required = false` hoặc `Optional<T>` / `ObjectProvider<T>` cho phụ thuộc không bắt buộc.',
   essence:
-    'By-type trước, rồi thu hẹp bằng `@Primary` (mặc định toàn cục) hoặc `@Qualifier` (chỉ định cục bộ). Tên bean là "tie-breaker" cuối.',
+    'By-type trước, rồi `@Qualifier` thu hẹp tại điểm tiêm, sau đó `@Primary` chọn bean mặc định. Tên bean là phương án phân xử về sau.',
   example:
     'Hai `DataSource`: `@Primary` cho `DataSource` chính, `@Qualifier("readReplicaDataSource")` tại nơi cần đọc từ replica. Repository báo cáo tiêm replica, phần còn lại dùng bean primary.',
   viz: {
     type: 'flow',
     title: '@Autowired resolve khi có nhiều ứng viên',
-    nodes: ['khớp theo kiểu', 'nhiều ứng viên?', 'lọc @Primary', 'vẫn nhiều?', '@Qualifier / tên bean', 'không giải quyết được'],
+    nodes: ['khớp theo kiểu', 'lọc @Qualifier', 'nhiều ứng viên?', 'chọn @Primary', 'so tên bean', 'không giải quyết được'],
     steps: [
       { to: 0, label: 'bước 1: tìm bean cùng kiểu' },
-      { to: 2, label: 'bước 2: nếu nhiều → chọn bean đánh dấu @Primary' },
-      { to: 4, label: 'bước 3: so khớp @Qualifier("name") hoặc tên field/param với tên bean (ưu tiên hơn @Primary)' },
+      { to: 1, label: 'bước 2: nếu có @Qualifier thì chỉ giữ ứng viên khớp' },
+      { to: 3, label: 'bước 3: còn nhiều → chọn bean đánh dấu @Primary' },
+      { to: 4, label: 'bước 4: so tên field/param với tên bean; @Priority cũng có thể tham gia' },
       { to: 5, label: 'không còn cách phân biệt → NoUniqueBeanDefinitionException' },
     ],
   },
@@ -597,10 +598,10 @@ SS.addQuestions('java', [
         "}\n" +
         "\n" +
         "// Thứ tự Spring quyết định:\n" +
-        "//   1) khớp theo KIỂU -> chỉ 1 ứng viên thì xong\n" +
-        "//   2) còn nhiều: ưu tiên bean có @Primary\n" +
-        "//   3) vẫn nhiều: khớp @Qualifier\n" +
-        "//   4) vẫn nhiều: khớp TÊN BIẾN với tên bean\n" +
+        "//   1) khớp theo KIỂU\n" +
+        "//   2) có @Qualifier: chỉ giữ ứng viên khớp\n" +
+        "//   3) còn nhiều: ưu tiên bean có @Primary\n" +
+        "//   4) vẫn nhiều: khớp TÊN BIẾN với tên bean (@Priority cũng có thể tham gia)\n" +
         "//   5) hết cách -> ném lỗi\n" +
         "\n" +
         "@Component\n" +
@@ -674,7 +675,7 @@ SS.addQuestions('java', [
         "    // Scope prototype trở nên vô nghĩa.\n" +
         "}\n" +
         "\n" +
-        "// CÁCH 1: ObjectProvider — sạch nhất, không phụ thuộc API container\n" +
+        "// CÁCH 1: ObjectProvider — API của Spring, gọn và an toàn\n" +
         "@Service\n" +
         "class WithProvider {\n" +
         "    private final ObjectProvider<Task> tasks;\n" +
@@ -1100,11 +1101,11 @@ SS.addQuestions('java', [
   id: 'java-topucn',
   q: '`@Async` và `@Scheduled` hoạt động thế nào? Cạm bẫy thường gặp?',
   answer:
-    'Cả hai dựa trên proxy AOP (cần `@EnableAsync` / `@EnableScheduling`).\n\n' +
-    '`@Async`: lời gọi method được đẩy sang `TaskExecutor`, trả về ngay (`void`, `Future`, hoặc `CompletableFuture`). Method phải `public`, gọi từ **bean khác** (self-invocation vô hiệu hoá), và nên cấu hình executor riêng (mặc định `SimpleAsyncTaskExecutor` tạo thread vô hạn — nguy hiểm).\n\n' +
+    'Cần bật bằng `@EnableAsync` / `@EnableScheduling`, nhưng cơ chế khác nhau: `@Async` đi qua proxy AOP, còn `@Scheduled` được bean post-processor đăng ký thành task với scheduler.\n\n' +
+    '`@Async`: lời gọi method được đẩy sang `TaskExecutor`, trả về ngay (`void`, `Future`, hoặc `CompletableFuture`). Method phải `public`, gọi từ **bean khác** (self-invocation vô hiệu hoá), và nên cấu hình executor có giới hạn. Spring thuần có thể rơi về `SimpleAsyncTaskExecutor` (mỗi lần gọi một thread mới); Spring Boot tự cấu hình `ThreadPoolTaskExecutor` 8 core, nhưng queue mặc định không giới hạn.\n\n' +
     '`@Scheduled`: chạy theo `fixedRate`/`fixedDelay`/`cron`. Mặc định **một thread duy nhất** cho mọi job → job chậm làm trễ job khác; cần `ThreadPoolTaskScheduler`. Trong cluster nhiều instance, mọi node đều chạy → cần khoá phân tán (ShedLock).',
   essence:
-    'Cả hai chỉ là advice quanh proxy. `@Async` cần executor có giới hạn; `@Scheduled` cần pool và, trong môi trường scale-out, cần cơ chế chọn một node chạy.',
+    '`@Async` là advice quanh proxy, còn `@Scheduled` là task do scheduler gọi. `@Async` cần executor có giới hạn; `@Scheduled` cần pool và, trong môi trường scale-out, cần cơ chế chọn một node chạy.',
   example:
     'Job gửi email nhắc hạn chạy `@Scheduled(cron="0 0 8 * * *")` trên 3 pod → 3 lần gửi. Bọc bằng `@SchedulerLock` (ShedLock + Redis/DB) để chỉ một pod thực thi mỗi lần.',
   viz: {
@@ -1113,9 +1114,9 @@ SS.addQuestions('java', [
     rows: [
       ['Cần bật', '@EnableAsync', '@EnableScheduling'],
       ['Cơ chế', 'đẩy lời gọi sang TaskExecutor, trả về ngay', 'chạy theo fixedRate / fixedDelay / cron'],
-      ['Cạm bẫy chính', 'executor mặc định tạo thread vô hạn', '1 thread cho mọi job → job chậm làm trễ job khác'],
+      ['Cạm bẫy chính', 'executor hoặc queue mặc định không giới hạn', '1 thread cho mọi job → job chậm làm trễ job khác'],
       ['Trong cluster', '—', 'mọi node đều chạy → cần ShedLock'],
-      ['Chung', 'self-invocation vô hiệu hoá (advice quanh proxy)', 'method phải public'],
+      ['Đường gọi', 'qua proxy; self-invocation bỏ qua advice', 'scheduler gọi method đã đăng ký'],
     ],
   },
   demo: [
@@ -1128,8 +1129,8 @@ SS.addQuestions('java', [
         "@EnableScheduling\n" +
         "public class AsyncConfig {\n" +
         "\n" +
-        "    // Mặc định @Async dùng SimpleAsyncTaskExecutor — TẠO THREAD MỚI MỖI LẦN GỌI,\n" +
-        "    // không giới hạn. Luôn khai báo pool riêng:\n" +
+        "    // Spring thuần có thể dùng SimpleAsyncTaskExecutor (mỗi lần gọi một thread mới).\n" +
+        "    // Boot có pool 8 core nhưng queue mặc định không giới hạn -> nên đặt giới hạn:\n" +
         "    @Bean(name = \"taskExecutor\")\n" +
         "    public Executor taskExecutor() {\n" +
         "        ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();\n" +
@@ -1148,8 +1149,8 @@ SS.addQuestions('java', [
         "    public CompletableFuture<Report> build() {         // trả CompletableFuture để\n" +
         "        return CompletableFuture.completedFuture(r);   // còn bắt được exception\n" +
         "    }\n" +
-        "    // BẪY 1: @Async trả void thì exception BIẾN MẤT hoàn toàn\n" +
-        "    //         -> cài AsyncUncaughtExceptionHandler nếu buộc phải dùng void\n" +
+        "    // BẪY 1: @Async trả void thì caller KHÔNG nhận được exception, mặc định chỉ có log\n" +
+        "    //         -> cài AsyncUncaughtExceptionHandler nếu cần xử lý riêng\n" +
         "    // BẪY 2: self-invocation — gọi this.build() không qua proxy -> chạy đồng bộ\n" +
         "    // BẪY 3: mất ThreadLocal (SecurityContext, MDC, transaction) sang thread mới\n" +
         "\n" +
