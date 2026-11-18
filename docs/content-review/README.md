@@ -7,7 +7,7 @@ Thư mục này lưu quy trình và hồ sơ kiểm tra độ chính xác của 
 | Chủ đề | Số câu | Trạng thái | Kết quả | Hồ sơ |
 | --- | ---: | --- | --- | --- |
 | `java` | 147 | Đã rà soát và sửa ngày 2026-11-18 | 90 điểm, commit `14b60ba` | [java/](java/review.md) |
-| `kafka` | 101 | Chưa rà soát | | |
+| `kafka` | 101 | Đã rà soát và sửa ngày 2026-11-18, chưa chạy broker | 81 điểm, commit `d70938b` | [kafka/](kafka/review.md) |
 | `aws` | 100 | Chưa rà soát | | |
 | `redis` | 100 | Chưa rà soát | | |
 | `sql` | 100 | Chưa rà soát | | |
