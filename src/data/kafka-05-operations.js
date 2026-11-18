@@ -5,7 +5,7 @@ SS.addQuestions('kafka', [
   q: 'ISR shrink/expand và unclean leader election là gì?',
   answer:
     'Follower fetch không kịp leader trong `replica.lag.time.max.ms` → bị **loại khỏi ISR** (shrink). Bắt kịp → **thêm lại** (expand). Metric `IsrShrinksPerSec` cao = follower/broker/mạng có vấn đề.\n\n' +
-    'Khi leader chết mà **ISR rỗng** (không còn replica đồng bộ):\n' +
+    'Khi leader chết mà **không còn replica đủ điều kiện sống** (ISR, và ELR nếu bật):\n' +
     '- `unclean.leader.election.enable=false` (mặc định): partition **offline** cho tới khi một replica trong ISR quay lại → ưu tiên **không mất dữ liệu**.\n' +
     '- `true`: bầu một replica ngoài ISR (tụt hậu) làm leader → partition online lại nhưng **mất** các message replica đó chưa có.',
   essence:
@@ -16,7 +16,7 @@ SS.addQuestions('kafka', [
     type: 'compare',
     cols: ['unclean.leader.election = false (mặc định)', '= true'],
     rows: [
-      ['Khi ISR rỗng và leader chết', 'partition OFFLINE tới khi replica ISR quay lại', 'bầu replica ngoài ISR (tụt hậu) làm leader'],
+      ['Khi không còn replica ISR/ELR sống', 'partition OFFLINE tới khi replica ISR quay lại', 'bầu replica ngoài ISR (tụt hậu) làm leader'],
       ['Ưu tiên', 'không mất dữ liệu', 'tính sẵn sàng'],
       ['Hệ quả', 'gián đoạn vài phút', 'partition online lại nhưng MẤT message replica đó chưa có'],
       ['Dùng cho', 'dữ liệu tài chính', 'topic log / metric'],
@@ -142,8 +142,8 @@ SS.addQuestions('kafka', [
         "# 2) Sinh kế hoạch (broker-list gồm CẢ broker cũ lẫn mới)\n" +
         "kafka-reassign-partitions.sh --bootstrap-server localhost:9092 \\\n" +
         "  --topics-to-move-json-file topics.json \\\n" +
-        "  --broker-list \"1,2,3,4\" --generate > plan.json\n" +
-        "# LƯU LẠI phần \"current\" trong output — đó là đường lui nếu cần rollback\n" +
+        "  --broker-list \"1,2,3,4\" --generate\n" +
+        "# Output có HAI khối JSON: lưu khối Current để rollback, chép khối Proposed vào plan.json\n" +
         "\n" +
         "# 3) Thực thi, kèm GIỚI HẠN BĂNG THÔNG (bắt buộc ở production)\n" +
         "kafka-reassign-partitions.sh --bootstrap-server localhost:9092 \\\n" +
@@ -260,7 +260,7 @@ SS.addQuestions('kafka', [
         "#   cho consumer kịp đọc bản gốc.\n" +
         "\n" +
         "# CẢ HAI: giữ trạng thái mới nhất nhưng vẫn dọn bản ghi quá cũ\n" +
-        "--add-config cleanup.policy=compact,delete,retention.ms=2592000000\n" +
+        "--add-config 'cleanup.policy=[compact,delete],retention.ms=2592000000'\n" +
         "\n" +
         "# LƯU Ý: segment ĐANG hoạt động không bao giờ bị nén hay xoá.\n" +
         "# segment.ms quá lớn -> retention không có tác dụng như mong đợi.",
@@ -276,7 +276,7 @@ SS.addQuestions('kafka', [
     'Lưu offset commit của **mọi** consumer group: key = `(group, topic, partition)`, value = `(offset, metadata, timestamp)`.\n\n' +
     'Lưu ý:\n' +
     '- RF của nó phải ≥ 3 ở production (cụm nhỏ lúc tạo có thể lỡ đặt RF=1 → mất offset khi broker chết).\n' +
-    '- Group không hoạt động → offset bị xoá sau `offsets.retention.mines` (mặc định 7 ngày) → group đó khi quay lại rơi vào `auto.offset.reset`.',
+    '- Group không hoạt động → offset bị xoá sau `offsets.retention.minutes` (mặc định 7 ngày) → group đó khi quay lại rơi vào `auto.offset.reset`.',
   essence:
     'Vị trí đọc của consumer chính là dữ liệu trong một topic Kafka bình thường. Bảo vệ nó như topic quan trọng: RF cao, retention đủ dài cho consumer nghỉ lễ.',
   example:
@@ -304,13 +304,13 @@ SS.addQuestions('kafka', [
         "\n" +
         "kafka-console-consumer.sh --bootstrap-server localhost:9092 \\\n" +
         "  --topic __consumer_offsets --from-beginning \\\n" +
-        "  --formatter \"kafka.coordinator.group.GroupMetadataManager\\$OffsetsMessageFormatter\" | head\n" +
+        "  --formatter org.apache.kafka.tools.consumer.OffsetsMessageFormatter | head\n" +
         "\n" +
         "# BỐN ĐIỀU CẦN LƯU Ý:\n" +
         "# 1) RF phải >= 3 ở production. Cụm dựng thử thường để RF=1 rồi lên thật quên\n" +
         "#    sửa -> mất broker đó là MỌI group mất offset, đọc lại từ đầu.\n" +
         "#    offsets.topic.replication.factor=3   (chỉ có tác dụng lúc topic được TẠO)\n" +
-        "# 2) offsets.retention.ms (mặc định 7 ngày): group KHÔNG hoạt động quá lâu\n" +
+        "# 2) offsets.retention.minutes (mặc định 7 ngày): group KHÔNG hoạt động quá lâu\n" +
         "#    -> offset bị XOÁ -> quay lại thì auto.offset.reset quyết định số phận.\n" +
         "#    Đây là nguyên nhân điển hình của \"sau kỳ nghỉ, consumer đọc lại từ đầu\".\n" +
         "# 3) Partition lệch nặng: một group commit quá dày (commit mỗi message)\n" +
@@ -478,7 +478,7 @@ SS.addQuestions('kafka', [
   essence:
     'KStream = sự kiện, KTable = trạng thái. State store cho phép xử lý có nhớ; changelog làm state đó chịu lỗi. Windowing đưa yếu tố thời gian vào aggregation.',
   example:
-    '"Số đơn hàng và doanh thu mỗi cửa hàng trong cửa sổ 1 giờ, cập nhật mỗi 5 phút": `orders.groupBy(store).windowedBy(TimeWindows.ofSizeAndGrace(1h, 10m)).aggregate(...)` → phát ra topic `store-hourly-stats`. Instance crash → state khôi phục từ changelog trong vài giây.',
+    '"Số đơn hàng và doanh thu mỗi cửa hàng trong cửa sổ 1 giờ, cập nhật mỗi 5 phút": `orders.groupBy(store).windowedBy(TimeWindows.ofSizeAndGrace(1h, 10m).advanceBy(5m)).aggregate(...)` → phát ra topic `store-hourly-stats`. Instance crash → state khôi phục từ changelog trong vài giây.',
   viz: {
     type: 'compare',
     cols: ['KStream', 'KTable'],
@@ -592,7 +592,7 @@ SS.addQuestions('kafka', [
     '- **Authentication (SASL)**: `SASL/PLAIN` (user/pass, cần TLS), `SASL/SCRAM` (hash, lưu trong Kafka/ZK), `SASL/GSSAPI` (Kerberos), `SASL/OAUTHBEARER` (OIDC token). Xác định "client là ai" (principal).\n' +
     '- **Authorization (ACL)**: `kafka-acls.sh` cấp quyền Read/Write/Create/Describe trên resource (topic, group, cluster) cho principal. `allow.everyone.if.no.acl.found=false` để mặc định là từ chối.',
   essence:
-    'Ba lớp: TLS (không ai nghe lén), SASL (bạn là ai), ACL (bạn được làm gì). Thiếu ACL thì mọi client xác thực được có toàn quyền.',
+    'Ba lớp: TLS (không ai nghe lén), SASL (bạn là ai), ACL (bạn được làm gì). Khi đã bật authorizer, resource chưa có ACL mặc định chỉ super user truy cập được; chưa bật authorizer thì ACL không được kiểm tra.',
   example:
     'App thanh toán: principal `svc-payment` được `Write` topic `payments`, `Read` group `payment-processor`. Không có quyền trên topic `hr-events`. Client dùng SASL/SCRAM over TLS, mật khẩu từ Vault.',
   viz: {
@@ -691,7 +691,7 @@ SS.addQuestions('kafka', [
         "# tiến lên hay không -> ít báo động giả hơn ngưỡng tĩnh.\n" +
         "curl http://burrow:8000/v3/kafka/local/consumer/order-processor/status\n" +
         "\n" +
-        "# kafka-lag-exporter / kafka_exporter — xuất Prometheus, và quan trọng là\n" +
+        "# kafka-lag-exporter — xuất Prometheus, và quan trọng là\n" +
         "# tính được lag theo THỜI GIAN (ước lượng \"chậm bao nhiêu giây\").\n" +
         "\n" +
         "# VÌ SAO đo bằng giây: \"lag 1 triệu message\" vô nghĩa nếu không biết tốc độ\n" +
@@ -717,11 +717,11 @@ SS.addQuestions('kafka', [
     '- Throughput mỗi partition: đo thực tế, thường 10–50 MB/s.\n' +
     '- Số partition topic ≈ max(throughput mục tiêu / throughput/partition, số consumer song song cần).\n' +
     '- Đĩa: `throughput ghi × retention × RF`, cộng headroom 30–40%.\n' +
-    '- Mạng: replication nhân đôi lưu lượng ghi (RF-1 lần fetch giữa broker).',
+    '- Mạng: replication thêm RF-1 lần lưu lượng ghi giữa các broker.',
   essence:
     'Bắt đầu từ throughput mục tiêu và SLA, suy ra partition và broker; luôn chừa headroom cho spike và cho việc rebalance/reassign. Đừng "đặt thật nhiều partition cho chắc".',
   example:
-    'Mục tiêu 500 MB/s ghi, RF=3, retention 3 ngày: đĩa ≈ 500MB/s × 259200s × 3 ≈ 389 TB thô → ~15 broker với 30TB NVMe mỗi broker (kèm headroom). ~48 partition cho topic chính (10MB/s/partition).',
+    'Mục tiêu 500 MB/s ghi, RF=3, retention 3 ngày: đĩa ≈ 500MB/s × 259200s × 3 ≈ 389 TB thô, cộng 35% headroom ≈ 525 TB → ~18 broker với 30TB NVMe mỗi broker. ~50 partition cho topic chính (10MB/s/partition).',
   viz: {
     type: 'tree',
     title: 'Sizing — từ throughput mục tiêu suy ra partition + broker',
@@ -732,7 +732,7 @@ SS.addQuestions('kafka', [
         { label: 'Throughput/partition', note: 'đo thực tế, thường 10–50 MB/s' },
         { label: 'Số partition topic', note: '≈ max(throughput mục tiêu / throughput/partition, số consumer song song)' },
         { label: 'Đĩa', note: 'throughput ghi × retention × RF + headroom 30–40%' },
-        { label: 'Mạng', note: 'replication nhân đôi lưu lượng ghi' },
+        { label: 'Mạng', note: 'replication thêm RF-1 lần lưu lượng ghi' },
       ],
     },
   },
@@ -744,7 +744,7 @@ SS.addQuestions('kafka', [
         "# 1) DUNG LƯỢNG ĐĨA\n" +
         "#    đĩa = throughput_ghi × retention × RF × (1 + dự phòng)\n" +
         "#    Ví dụ: 50 MB/s × 7 ngày × 3 × 1.3\n" +
-        "#         = 50 × 86400 × 7 × 3 × 1.3 / 1024^3 ≈ 110 TB\n" +
+        "#         = 50 × 86400 × 7 × 3 × 1.3 / 1024^2 ≈ 112 TiB\n" +
         "#    Chia cho số broker, và giữ mức dùng đĩa dưới 70%.\n" +
         "\n" +
         "# 2) SỐ PARTITION\n" +
@@ -754,7 +754,7 @@ SS.addQuestions('kafka', [
         "\n" +
         "# 3) SỐ BROKER — lấy giá trị lớn nhất trong ba ràng buộc:\n" +
         "#    - đĩa: tổng dung lượng / dung lượng mỗi broker\n" +
-        "#    - mạng: throughput × (RF + số consumer group) / băng thông NIC\n" +
+        "#    - mạng ra: throughput × (RF - 1 + số consumer group) / băng thông NIC\n" +
         "#            (đây thường là ràng buộc bị bỏ quên nhưng lại chặt nhất)\n" +
         "#    - partition: tổng partition / ~4000 mỗi broker\n" +
         "#    Tối thiểu 3 broker để RF=3 có ý nghĩa.\n" +
@@ -765,9 +765,9 @@ SS.addQuestions('kafka', [
         "# Đo thật thay vì đoán:\n" +
         "kafka-producer-perf-test.sh --topic bench --num-records 5000000 \\\n" +
         "  --record-size 1024 --throughput -1 \\\n" +
-        "  --producer-props bootstrap.servers=localhost:9092 acks=all compression.type=lz4\n" +
+        "  --command-property bootstrap.servers=localhost:9092 acks=all compression.type=lz4\n" +
         "kafka-consumer-perf-test.sh --bootstrap-server localhost:9092 \\\n" +
-        "  --topic bench --messages 5000000",
+        "  --topic bench --num-records 5000000",
     },
   ],
 },
@@ -836,7 +836,7 @@ SS.addQuestions('kafka', [
   q: 'Broker chết hoặc đầy đĩa — quy trình phục hồi?',
   answer:
     '**Broker chết**: controller tự bầu leader mới từ ISR cho các partition broker đó giữ leader → gián đoạn ngắn. Khi broker quay lại, nó fetch phần thiếu để trở lại ISR. Nếu chết lâu, cân nhắc reassign partition sang broker khác.\n\n' +
-    '**Đầy đĩa**: broker ngừng ghi, partition trên đó offline hoặc under-replicated. Xử lý: giảm `retention.ms`/`retention.bytes` của topic lớn để giải phóng segment; hoặc thêm `log.dirs` (đĩa mới); hoặc di chuyển partition. Phòng ngừa: alert ở 75% disk.',
+    '**Đầy đĩa**: broker ngừng ghi, partition trên đó offline hoặc under-replicated. Xử lý: giảm `retention.ms`/`retention.bytes` của topic lớn để giải phóng segment; hoặc thêm `log.dirs` (đĩa mới); hoặc di chuyển partition. Nếu lỗi đĩa đã làm broker dừng, phải nới volume trước rồi mới khởi động lại. Phòng ngừa: alert ở 75% disk.',
   essence:
     'Kafka tự chịu được mất broker nhờ replication; việc của bạn là khôi phục ISR và không để đĩa đầy. Đĩa đầy là sự cố tự gây phổ biến nhất — quota + retention + alert.',
   example:
@@ -864,11 +864,12 @@ SS.addQuestions('kafka', [
         "# 2) Khởi động lại được thì cứ khởi động — broker tự bắt kịp từ leader.\n" +
         "#    Dữ liệu còn nguyên trên đĩa nên nhanh hơn nhiều so với thay mới.\n" +
         "\n" +
-        "# 3) Chết hẳn (mất đĩa): dựng broker mới với CÙNG node.id (KRaft) và\n" +
-        "#    reassign partition sang nó. Nhớ đặt --throttle.\n" +
+        "# 3) Chết hẳn (mất đĩa): dựng broker mới với CÙNG node.id và đúng cluster id.\n" +
+        "#    Nó vẫn giữ assignment cũ nên tự sao chép lại từ leader, không cần reassign.\n" +
         "\n" +
         "# === ĐẦY ĐĨA (nguy hiểm hơn: broker không ghi được và có thể hỏng log) ===\n" +
-        "# 1) Cứu chỗ trống NGAY bằng cách giảm retention của topic to nhất:\n" +
+        "# 1) Broker còn chạy: cứu chỗ trống NGAY bằng cách giảm retention của topic to nhất.\n" +
+        "#    Broker đã dừng: nới volume trước, vì nó không thể tự dọn khi chưa chạy.\n" +
         "kafka-configs.sh --bootstrap-server localhost:9092 --alter \\\n" +
         "  --entity-type topics --entity-name events --add-config retention.ms=3600000\n" +
         "# Kafka sẽ xoá segment cũ trong vòng vài phút. Nhớ đặt lại sau khi qua sự cố.\n" +
@@ -891,12 +892,12 @@ SS.addQuestions('kafka', [
   answer:
     '- Restart **từng broker một**, chờ nó trở lại ISR đầy đủ (`UnderReplicatedPartitions` về 0) mới làm broker tiếp theo.\n' +
     '- Trước khi tắt: chạy **controlled shutdown** (`controlled.shutdown.enable=true`) để broker chuyển leadership đi trước, tránh gián đoạn đột ngột.\n' +
-    '- Nâng version: theo `inter.broker.protocol.version` và `log.message.format.version` — nâng binary trước, bump protocol version sau khi tất cả broker đã lên.\n' +
+    '- Nâng version ở KRaft: nâng binary từng node trước, kiểm tra ổn định rồi chạy `kafka-features.sh upgrade --release-version <phiên bản>` để chốt. `inter.broker.protocol.version` chỉ thuộc quy trình của cụm ZooKeeper cũ.\n' +
     '- Consumer/producer với `enable.idempotence` + retry sẽ tự vượt qua các lần chuyển leader.',
   essence:
     'Nguyên tắc: mỗi lúc chỉ một broker "ra khỏi vòng", và luôn chờ replication bắt kịp. Controlled shutdown biến việc tắt broker thành di chuyển leadership có trật tự.',
   example:
-    'Cụm 6 broker, RF=3: script restart broker 1 → chờ `UnderReplicatedPartitions=0` (2–5 phút) → broker 2 → ... Toàn bộ upgrade mất ~30 phút, ứng dụng chỉ thấy vài `NotLeaderForPartition` được retry trong suốt.',
+    'Cụm 6 broker, RF=3: script restart broker 1 → chờ `UnderReplicatedPartitions=0` (2–5 phút) → broker 2 → ... Toàn bộ upgrade mất ~30 phút, ứng dụng chỉ thấy vài `NotLeaderOrFollower` được retry trong suốt.',
   viz: {
     type: 'flow',
     title: 'Rolling upgrade an toàn — mỗi lúc chỉ MỘT broker ra khỏi vòng',
@@ -904,7 +905,7 @@ SS.addQuestions('kafka', [
     steps: [
       { to: 0, label: 'controlled.shutdown.enable=true — tránh gián đoạn đột ngột' },
       { to: 2, label: 'chờ replication bắt kịp mới làm broker tiếp theo' },
-      { to: 3, label: 'nâng version: bump inter.broker.protocol.version SAU khi mọi broker đã lên binary mới' },
+      { to: 3, label: 'nâng version: chạy kafka-features.sh upgrade SAU khi mọi node đã lên binary mới' },
     ],
   },
   demo: [
@@ -919,26 +920,21 @@ SS.addQuestions('kafka', [
         "kafka-topics.sh --bootstrap-server localhost:9092 --describe --under-replicated-partitions\n" +
         "# Phải KHÔNG có dòng nào. Đang có replica tụt lại mà restart là tự chuốc sự cố.\n" +
         "\n" +
-        "# 2) Chuyển leader ra khỏi broker sắp restart -> tránh gián đoạn cho client\n" +
-        "kafka-leader-election.sh --bootstrap-server localhost:9092 \\\n" +
-        "  --election-type preferred --all-topic-partitions\n" +
-        "\n" +
-        "# 3) Tắt MỀM (controlled shutdown: broker tự chuyển leader trước khi thoát)\n" +
+        "# 2) Tắt MỀM (controlled shutdown: broker tự chuyển leader trước khi thoát)\n" +
         "#    controlled.shutdown.enable=true  (mặc định)\n" +
         "systemctl stop kafka        # đợi thoát hẳn, đừng kill -9\n" +
         "\n" +
-        "# 4) Nâng cấp, khởi động lại, rồi CHỜ bắt kịp hoàn toàn\n" +
+        "# 3) Nâng cấp, khởi động lại, rồi CHỜ bắt kịp hoàn toàn\n" +
         "systemctl start kafka\n" +
         "watch \u0027kafka-topics.sh --bootstrap-server localhost:9092 --describe --under-replicated-partitions | wc -l\u0027\n" +
         "\n" +
-        "# 5) Lặp lại cho broker tiếp theo.\n" +
+        "# 4) Lặp lại cho broker tiếp theo.\n" +
         "\n" +
-        "# NÂNG CẤP PHIÊN BẢN — hai vòng, không được gộp:\n" +
-        "#   Vòng 1: cài binary mới, GIỮ NGUYÊN\n" +
-        "#           inter.broker.protocol.version=<phiên bản CŨ>\n" +
-        "#   Vòng 2: sau khi mọi broker đã chạy binary mới, mới nâng\n" +
-        "#           inter.broker.protocol.version=<phiên bản MỚI> rồi restart lại.\n" +
-        "# Làm vậy để còn ROLLBACK được ở vòng 1 — sau khi nâng protocol thì không lui được.",
+        "# NÂNG CẤP PHIÊN BẢN TRÊN KRAFT — hai bước, không được gộp:\n" +
+        "#   Bước 1: rolling upgrade binary trên mọi controller và broker.\n" +
+        "#   Bước 2: khi cụm đã ổn định, chốt phiên bản:\n" +
+        "#           kafka-features.sh --bootstrap-server localhost:9092 upgrade --release-version 4.4\n" +
+        "# Giữ bước 2 lại để còn kiểm tra; đọc ghi chú nâng cấp trước khi chốt.",
     },
   ],
 },
@@ -1006,7 +1002,7 @@ SS.addQuestions('kafka', [
   q: 'Preferred leader election và cân bằng leadership?',
   answer:
     'Mỗi partition có một **preferred leader** — replica đầu tiên trong danh sách assignment. Sau khi broker chết rồi hồi, leadership có thể dồn lệch (broker vừa hồi giữ toàn follower).\n\n' +
-    '`auto.leader.rebalance.enable=true` (mặc định): controller định kỳ chuyển leadership về preferred leader nếu lệch quá `leader.imbalance.per.broker.percentage`.\n\n' +
+    '`auto.leader.rebalance.enable=true` (mặc định): controller định kỳ (`leader.imbalance.check.interval.seconds`) chuyển leadership về preferred leader khi phát hiện lệch.\n\n' +
     'Thủ công: `kafka-leader-election.sh --election-type preferred`.',
   essence:
     'Leadership lệch = một số broker gánh mọi read/write, số khác nhàn. Preferred leader election trải đều tải bằng cách đưa leadership về vị trí "cân bằng theo thiết kế".',
@@ -1018,7 +1014,7 @@ SS.addQuestions('kafka', [
     nodes: ['broker chết rồi hồi', 'leadership dồn lệch (broker vừa hồi toàn follower)', 'auto.leader.rebalance.enable (mặc định)', 'controller chuyển leadership về preferred leader'],
     steps: [
       { to: 1, label: 'preferred leader = replica đầu tiên trong danh sách assignment' },
-      { to: 2, label: 'controller định kỳ kiểm tra nếu lệch quá leader.imbalance.per.broker.percentage' },
+      { to: 2, label: 'controller định kỳ kiểm tra theo leader.imbalance.check.interval.seconds' },
       { to: 3, label: 'thủ công: kafka-leader-election.sh --election-type preferred' },
     ],
   },
@@ -1056,7 +1052,7 @@ SS.addQuestions('kafka', [
       code:
         "auto.leader.rebalance.enable=true       # mặc định true\n" +
         "leader.imbalance.check.interval.seconds=300\n" +
-        "leader.imbalance.per.broker.percentage=10   # lệch quá 10% thì tự chuyển\n" +
+        "# leader.imbalance.per.broker.percentage không còn trong cấu hình Kafka 4.4\n" +
         "\n" +
         "# Tự động rất tiện, nhưng có một cái bẫy: broker vừa khởi động lại được giao\n" +
         "# leader NGAY khi vào ISR, trong khi page cache còn nguội và nó có thể chưa\n" +
@@ -1118,22 +1114,22 @@ SS.addQuestions('kafka', [
         "\n" +
         "# === ĐỌC / GHI THỬ ===\n" +
         "kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic orders \\\n" +
-        "  --from-beginning --property print.key=true --property print.headers=true --max-messages 10\n" +
+        "  --from-beginning --formatter-property print.key=true --formatter-property print.headers=true --max-messages 10\n" +
         "kafka-console-producer.sh --bootstrap-server localhost:9092 --topic orders \\\n" +
-        "  --property parse.key=true --property key.separator=:\n" +
+        "  --reader-property parse.key=true --reader-property key.separator=:\n" +
         "\n" +
         "# === CẤU HÌNH ===\n" +
         "kafka-configs.sh --bootstrap-server localhost:9092 --describe --entity-type topics --entity-name orders\n" +
         "\n" +
         "# === CHẨN ĐOÁN SÂU ===\n" +
         "kafka-log-dirs.sh --bootstrap-server localhost:9092 --describe --broker-list 1\n" +
-        "kafka-run-class.sh kafka.tools.DumpLogSegments --files /var/lib/kafka/data/orders-0/000...log\n" +
-        "kafka-run-class.sh kafka.tools.GetOffsetShell --bootstrap-server localhost:9092 --topic orders --time -1\n" +
+        "kafka-dump-log.sh --files /var/lib/kafka/data/orders-0/000...log\n" +
+        "kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic orders --time -1\n" +
         "kafka-transactions.sh --bootstrap-server localhost:9092 list\n" +
         "\n" +
         "# === ĐO HIỆU NĂNG ===\n" +
         "kafka-producer-perf-test.sh --topic bench --num-records 1000000 --record-size 1024 \\\n" +
-        "  --throughput -1 --producer-props bootstrap.servers=localhost:9092\n" +
+        "  --throughput -1 --command-property bootstrap.servers=localhost:9092\n" +
         "\n" +
         "# Thay thế hiện đại, dễ dùng hơn nhiều: kcat (kafkacat), kaf, redpanda console.\n" +
         "kcat -b localhost:9092 -t orders -C -o -10 -e     # đọc 10 message cuối rồi thoát",
@@ -1145,7 +1141,7 @@ SS.addQuestions('kafka', [
   id: 'kafka-opuu36',
   q: 'Kafka trên Kubernetes: nên tự vận hành hay dùng managed?',
   answer:
-    '**Self-managed trên K8s** (Strimzi operator): Strimzi quản lý broker (StatefulSet), KRaft/ZK, rolling update, cert, user/topic dưới dạng CRD. Linh hoạt, chạy được đa cloud, nhưng team phải hiểu Kafka sâu (đĩa, rebalance, tuning).\n\n' +
+    '**Self-managed trên K8s** (Strimzi operator): Strimzi quản lý node pool (StrimziPodSet), KRaft, rolling update, cert, user/topic dưới dạng CRD. Linh hoạt, chạy được đa cloud, nhưng team phải hiểu Kafka sâu (đĩa, rebalance, tuning).\n\n' +
     '**Managed** (Confluent Cloud, AWS MSK, Aiven): nhà cung cấp lo broker, patch, scaling, backup. Ít việc ops, đổi lại chi phí cao hơn và ít quyền kiểm soát tuning/version.\n\n' +
     'Yếu tố quyết định: quy mô team platform, yêu cầu tuân thủ, chi phí, mức độ cần kiểm soát.',
   essence:
@@ -1167,35 +1163,46 @@ SS.addQuestions('kafka', [
       lang: "yaml",
       title: "Tự vận hành với Strimzi, và khi nào nên dùng managed",
       code:
-        "apiVersion: kafka.strimzi.io/v1beta2\n" +
+        "apiVersion: kafka.strimzi.io/v1\n" +
+        "kind: KafkaNodePool\n" +
+        "metadata:\n" +
+        "  name: combined                      # production lớn nên tách controller và broker\n" +
+        "  labels:\n" +
+        "    strimzi.io/cluster: production\n" +
+        "spec:\n" +
+        "  replicas: 3\n" +
+        "  roles: [controller, broker]\n" +
+        "  storage:\n" +
+        "    type: jbod\n" +
+        "    volumes:\n" +
+        "      - id: 0\n" +
+        "        type: persistent-claim        # BẮT BUỘC dùng PV, không dùng emptyDir\n" +
+        "        size: 2Ti\n" +
+        "        class: fast-ssd\n" +
+        "        deleteClaim: false            # giữ dữ liệu khi pod bị xoá\n" +
+        "  resources:\n" +
+        "    requests: { memory: 32Gi, cpu: \"8\" }\n" +
+        "    limits:   { memory: 32Gi, cpu: \"8\" }   # CPU và RAM đều request = limit -> Guaranteed\n" +
+        "  jvmOptions:\n" +
+        "    -Xms: 6g\n" +
+        "    -Xmx: 6g                          # heap NHỎ, phần RAM còn lại cho page cache\n" +
+        "---\n" +
+        "apiVersion: kafka.strimzi.io/v1\n" +
         "kind: Kafka\n" +
         "metadata:\n" +
         "  name: production\n" +
         "spec:\n" +
         "  kafka:\n" +
-        "    replicas: 3\n" +
+        "    listeners:\n" +
+        "      - { name: tls, port: 9093, type: internal, tls: true }\n" +
         "    config:\n" +
         "      default.replication.factor: 3\n" +
         "      min.insync.replicas: 2\n" +
         "      offsets.topic.replication.factor: 3\n" +
         "      transaction.state.log.replication.factor: 3\n" +
         "      transaction.state.log.min.isr: 2\n" +
-        "    storage:\n" +
-        "      type: jbod\n" +
-        "      volumes:\n" +
-        "        - id: 0\n" +
-        "          type: persistent-claim      # BẮT BUỘC dùng PV, không dùng emptyDir\n" +
-        "          size: 2Ti\n" +
-        "          class: fast-ssd\n" +
-        "          deleteClaim: false          # giữ dữ liệu khi pod bị xoá\n" +
         "    rack:\n" +
-        "      topologyKey: topology.kubernetes.io/zone   # trải replica ra nhiều AZ\n" +
-        "    resources:\n" +
-        "      requests: { memory: 32Gi, cpu: \"4\" }\n" +
-        "      limits:   { memory: 32Gi, cpu: \"8\" }       # request = limit -> QoS Guaranteed\n" +
-        "    jvmOptions:\n" +
-        "      -Xms: 6g\n" +
-        "      -Xmx: 6g                        # heap NHỎ, phần RAM còn lại cho page cache",
+        "      topologyKey: topology.kubernetes.io/zone   # trải replica ra nhiều AZ",
     },
     {
       lang: "bash",
@@ -1217,7 +1224,7 @@ SS.addQuestions('kafka', [
         "#  - không cấu hình rack -> ba replica cùng một AZ\n" +
         "#  - terminationGracePeriodSeconds quá ngắn -> broker bị kill giữa chừng\n" +
         "#    (Kafka cần thời gian cho controlled shutdown)\n" +
-        "#  - dùng Deployment thay vì StatefulSet -> danh tính broker không ổn định",
+        "#  - tự chạy bằng Deployment -> danh tính và volume của broker không ổn định",
     },
   ],
 },

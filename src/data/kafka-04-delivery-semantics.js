@@ -111,8 +111,8 @@ SS.addQuestions('kafka', [
     'Khi bật `enable.idempotence=true`, mỗi producer được cấp **PID (Producer ID)** từ broker. Mỗi batch gửi tới một partition mang **sequence number** tăng liên tục.\n\n' +
     'Broker lưu, cho mỗi `(PID, partition)`, sequence cao nhất đã ghi. Khi nhận batch:\n' +
     '- sequence = kỳ vọng → ghi, tăng bộ đếm.\n' +
-    '- sequence ≤ đã ghi (retry) → **bỏ qua**, ack lại.\n' +
-    '- sequence > kỳ vọng (nhảy cóc) → `OutOfOrderSequenceException`.\n\n' +
+    '- batch trùng một trong 5 batch gần nhất (retry) → **không ghi lại**, ack lại.\n' +
+    '- sequence khác kỳ vọng → `OutOfOrderSequenceException`.\n\n' +
     'PID mất khi producer restart → chỉ khử trùng trong một *session*.',
   essence:
     'Idempotence = đánh số thứ tự request phía producer + broker nhớ "đã thấy tới đâu". Nó dọn trùng do retry mạng, không dọn trùng do producer mới khởi tạo lại.',
@@ -125,8 +125,8 @@ SS.addQuestions('kafka', [
       label: 'Broker lưu sequence cao nhất đã ghi',
       children: [
         { label: 'sequence = kỳ vọng', note: 'ghi, tăng bộ đếm' },
-        { label: 'sequence ≤ đã ghi (retry)', note: 'BỎ QUA, ack lại — không tạo trùng' },
-        { label: 'sequence > kỳ vọng (nhảy cóc)', note: 'OutOfOrderSequenceException' },
+        { label: 'trùng 1 trong 5 batch gần nhất (retry)', note: 'không ghi lại, ack lại — không tạo trùng' },
+        { label: 'sequence khác kỳ vọng', note: 'OutOfOrderSequenceException' },
         { label: 'Producer restart', note: 'PID mới, seq reset 0 → chỉ khử trùng trong một session' },
       ],
     },
@@ -144,8 +144,8 @@ SS.addQuestions('kafka', [
         "//  3) Mỗi batch gửi đi mang theo PID + sequence đầu tiên của batch.\n" +
         "//  4) Broker nhớ sequence CUỐI CÙNG đã ghi cho mỗi (PID, partition):\n" +
         "//        seq == lastSeq + 1  -> ghi bình thường, cập nhật lastSeq\n" +
-        "//        seq <= lastSeq      -> ĐÃ GHI RỒI -> bỏ qua, trả ack thành công\n" +
-        "//        seq >  lastSeq + 1  -> thủng lỗ -> OutOfOrderSequenceException\n" +
+        "//        trùng 1 trong 5 batch gần nhất -> ĐÃ GHI RỒI -> trả ack thành công\n" +
+        "//        sequence khác       -> OutOfOrderSequenceException\n" +
         "\n" +
         "// Broker giữ 5 batch gần nhất cho mỗi (PID, partition) -> đây chính là lý do\n" +
         "// max.in.flight.requests.per.connection phải <= 5 khi bật idempotence.\n" +
@@ -154,8 +154,8 @@ SS.addQuestions('kafka', [
         "//  - chỉ trong MỘT PHIÊN producer. Restart -> PID mới -> không khử được nữa.\n" +
         "//  - chỉ khử trùng do RETRY của client. Ứng dụng tự gọi send() hai lần thì\n" +
         "//    đó là hai message khác nhau, Kafka không biết.\n" +
-        "//  - transactional.id giải quyết phần \"qua các phiên\": PID được giữ nguyên\n" +
-        "//    theo transactional.id khi khởi động lại.",
+        "//  - transactional.id giúp fence phiên cũ và kết thúc transaction dang dở khi\n" +
+        "//    khởi động lại, nhưng không khử record do ứng dụng gửi lại.",
     },
   ],
 },
@@ -224,7 +224,7 @@ SS.addQuestions('kafka', [
     'producer.sendOffsetsToTransaction(inputOffsets, consumerGroupMetadata);\n' +
     'producer.commitTransaction();\n' +
     '```\n' +
-    'Nếu commit thành công: output đã ghi VÀ offset input đã tiến — cùng nhau. Nếu abort/crash: cả hai đều không xảy ra, lô input được xử lý lại.',
+    'Nếu commit thành công: output đã ghi VÀ offset input đã tiến — cùng nhau. Nếu abort/crash: cả hai đều không xảy ra. Sau crash, consumer đọc lại từ offset đã commit; nếu abort mà tiến trình vẫn chạy thì phải `seek` về đầu lô rồi mới xử lý lại.',
   essence:
     'Chìa khoá EOS của pipeline là offset commit trở thành một phần của transaction output. "Đã xử lý" và "đã ghi kết quả" không còn tách rời được nữa.',
   example:
@@ -236,7 +236,7 @@ SS.addQuestions('kafka', [
     steps: [
       { to: 1, label: 'ghi output ra topic B' },
       { to: 2, label: 'commit offset input trở thành MỘT PHẦN của transaction output' },
-      { to: 3, label: 'commit thành công → output đã ghi VÀ offset đã tiến, cùng nhau; abort/crash → cả hai không xảy ra, lô xử lý lại' },
+      { to: 3, label: 'commit thành công → output đã ghi VÀ offset đã tiến, cùng nhau; abort/crash → cả hai không xảy ra, đọc lại lô' },
     ],
   },
   demo: [
@@ -269,7 +269,12 @@ SS.addQuestions('kafka', [
         "        producer.sendOffsetsToTransaction(offsets, consumer.groupMetadata());\n" +
         "        producer.commitTransaction();   // dữ liệu ra + offset vào: cùng nguyên tử\n" +
         "    } catch (KafkaException e) {\n" +
-        "        producer.abortTransaction();    // không ghi gì, offset cũng không nhích\n" +
+        "        // ProducerFencedException thì không abort: đóng producer và thoát.\n" +
+        "        producer.abortTransaction();    // output bị huỷ, offset đã commit không nhích\n" +
+        "        // Vị trí đọc trong bộ nhớ đã đi tiếp -> phải tua lại, nếu không lô này bị bỏ qua\n" +
+        "        for (var tp : records.partitions()) {\n" +
+        "            consumer.seek(tp, records.records(tp).get(0).offset());\n" +
+        "        }\n" +
         "    }\n" +
         "}\n" +
         "// KHÔNG bao giờ gọi consumer.commitSync() trong mẫu này — sẽ phá vỡ nguyên tử.",
@@ -364,7 +369,7 @@ SS.addQuestions('kafka', [
         "// cửa sổ mà một cái thành công, cái kia thất bại.\n" +
         "@Transactional\n" +
         "public void placeOrder(Order o) {\n" +
-        "    repo.save(o);                        // DB commit\n" +
+        "    repo.save(o);                        // DB commit khi method kết thúc\n" +
         "    producer.send(new ProducerRecord<>(\"orders\", o.id(), json(o)));\n" +
         "    // Kafka chết ở đây -> DB có đơn, hệ thống khác KHÔNG BAO GIỜ biết\n" +
         "    // Đảo ngược thứ tự cũng không cứu được: Kafka xong, DB rollback -> sự kiện ma\n" +
@@ -525,12 +530,12 @@ SS.addQuestions('kafka', [
   id: 'kafka-1tyxyxa',
   q: 'Kafka Streams đạt exactly-once bằng cách nào (`processing.guarantee`)?',
   answer:
-    'Đặt `processing.guarantee=exactly_once_v2`. Mỗi task Streams dùng một transactional producer. Trong một chu kỳ commit, nó **atomically**:\n' +
+    'Đặt `processing.guarantee=exactly_once_v2`. Mỗi stream thread dùng một transactional producer. Trong một chu kỳ commit, nó **atomically**:\n' +
     '- Ghi các record output.\n' +
     '- Ghi cập nhật **state store** vào topic changelog.\n' +
     '- Commit offset của input.\n\n' +
     'Nếu crash giữa chừng: transaction abort, state store được khôi phục từ changelog về đúng điểm commit trước, input xử lý lại. Kết quả cuối cùng như thể mỗi record xử lý đúng một lần.\n\n' +
-    '`v2` (Kafka 2.6+) dùng một producer cho mỗi instance thay vì mỗi task → ít tài nguyên hơn `v1`.',
+    'Cơ chế này có từ Streams 2.6 dưới tên `exactly_once_beta`, được đổi thành `exactly_once_v2` ở Kafka 3.0 và cần broker 2.5+. Nó dùng một producer cho mỗi thread thay vì mỗi task → ít tài nguyên hơn bản cũ.',
   essence:
     'Streams gói output + thay đổi state + offset vào một transaction. State (đếm, join, window) và stream ra ngoài luôn nhất quán với nhau kể cả khi lỗi.',
   example:
@@ -540,9 +545,9 @@ SS.addQuestions('kafka', [
     title: 'Kafka Streams EOS (processing.guarantee = exactly_once_v2)',
     nodes: ['chu kỳ commit', 'ghi record output', 'ghi cập nhật state store → changelog', 'commit offset input'],
     steps: [
-      { to: 1, label: 'mỗi task Streams dùng một transactional producer — 3 bước ATOMICALLY' },
+      { to: 1, label: 'mỗi stream thread dùng một transactional producer — 3 bước ATOMICALLY' },
       { to: 3, label: 'crash giữa chừng → abort, state khôi phục từ changelog về điểm commit trước, input xử lý lại' },
-      { to: 3, label: 'state (đếm, join, window) và stream ra ngoài luôn nhất quán; v2 = 1 producer/instance (nhẹ hơn v1)' },
+      { to: 3, label: 'state (đếm, join, window) và stream ra ngoài luôn nhất quán; v2 = 1 producer/thread (nhẹ hơn bản cũ)' },
     ],
   },
   demo: [
@@ -568,8 +573,8 @@ SS.addQuestions('kafka', [
         " .toStream()\n" +
         " .to(\"order-counts-topic\");\n" +
         "\n" +
-        "// EOS_V2 (Kafka 2.5+) dùng MỘT producer cho mỗi instance thay vì mỗi\n" +
-        "// task -> giảm mạnh số transaction và tài nguyên so với exactly_once cũ.\n" +
+        "// EXACTLY_ONCE_V2 (tên từ Kafka 3.0) dùng MỘT producer cho mỗi thread thay vì\n" +
+        "// mỗi task -> giảm mạnh tài nguyên so với exactly_once cũ.\n" +
         "// Cần broker >= 2.5.\n" +
         "\n" +
         "p.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, \"100\");\n" +
@@ -628,7 +633,7 @@ SS.addQuestions('kafka', [
         "// trong một partition thì xử lý TUẦN TỰ để giữ thứ tự.\n" +
         "\n" +
         "// Vượt trần partition mà vẫn giữ thứ tự: phân luồng theo key trong một consumer\n" +
-        "int slot = Math.abs(r.key().hashCode()) % workers.length;\n" +
+        "int slot = Math.floorMod(r.key().hashCode(), workers.length);\n" +
         "workers[slot].submit(() -> process(r));   // cùng key -> cùng worker -> đúng thứ tự\n" +
         "// Kèm theo: pause()/resume() và chỉ commit tới offset mà MỌI worker đã xong.\n" +
         "\n" +
@@ -644,11 +649,11 @@ SS.addQuestions('kafka', [
   q: '`transaction.timeout.ms` và transaction "treo" (hanging) là gì?',
   answer:
     '`transaction.timeout.ms` (producer, mặc định 60s; ≤ `transaction.max.timeout.ms` của broker): nếu producer mở transaction mà không commit/abort trong thời gian này, **coordinator tự abort** nó.\n\n' +
-    '**Hanging transaction**: producer chết đột ngột giữa transaction, hoặc bug khiến không bao giờ commit. Message của nó nằm sau LSO → consumer `read_committed` **bị chặn**, không đọc tiếp partition đó cho tới khi transaction được resolve (thường bởi timeout hoặc producer mới cùng `transactional.id` với epoch cao hơn).',
+    '**Hanging transaction**: producer chết đột ngột giữa transaction, hoặc bug khiến không bao giờ commit. Message của nó nằm sau LSO → consumer `read_committed` **bị chặn**, không đọc tiếp partition đó cho tới khi transaction được resolve (thường bởi timeout hoặc producer mới cùng `transactional.id` với epoch cao hơn). Nếu replica và coordinator lệch trạng thái, transaction có thể treo thật sự; lúc đó dùng `kafka-transactions.sh find-hanging` và `abort`.',
   essence:
     'Transaction chưa kết thúc là "rào chắn" với consumer read_committed. Timeout là van an toàn để rào chắn đó không tồn tại vĩnh viễn.',
   example:
-    'Consumer lag của một pipeline EOS đột nhiên đứng im dù producer vẫn ghi: kiểm tra transaction treo (`kafka-transactions.sh --list`). Producer bị OOM giữa transaction → sau `transaction.timeout.ms` coordinator abort → consumer thông luồng trở lại.',
+    'Consumer lag của một pipeline EOS đột nhiên đứng im dù producer vẫn ghi: kiểm tra transaction treo (`kafka-transactions.sh list`, `find-hanging`). Producer bị OOM giữa transaction → sau `transaction.timeout.ms` coordinator abort → consumer thông luồng trở lại.',
   viz: {
     type: 'flow',
     title: 'Hanging transaction chặn consumer read_committed',
@@ -679,7 +684,7 @@ SS.addQuestions('kafka', [
         "\n" +
         "# Tìm transaction treo lâu hơn ngưỡng:\n" +
         "kafka-transactions.sh --bootstrap-server localhost:9092 \\\n" +
-        "  find-hanging --broker-id 1 --max-transaction-timeout 900000\n" +
+        "  find-hanging --broker-id 1 --max-transaction-timeout 15     # đơn vị: phút\n" +
         "\n" +
         "# Ép abort (chỉ khi đã chắc producer đó chết hẳn):\n" +
         "kafka-transactions.sh --bootstrap-server localhost:9092 \\\n" +
@@ -696,7 +701,7 @@ SS.addQuestions('kafka', [
   q: 'So sánh Kafka EOS với distributed transaction (2PC/XA)?',
   answer:
     '**2PC/XA**: coordinator hỏi tất cả participant "sẵn sàng?" (prepare), rồi "commit". Blocking: nếu coordinator chết sau prepare, participant giữ khoá chờ vô hạn. Kém scale, latency cao, hầu hết hệ phân tán hiện đại tránh.\n\n' +
-    '**Kafka EOS**: không phải 2PC. Nó chỉ nguyên tử **trong Kafka** (message + offset + state changelog), dùng marker + epoch fencing, không giữ khoá phân tán. Không bao trùm DB/HTTP.\n\n' +
+    '**Kafka EOS**: không phải XA giữa nhiều hệ thống. Coordinator cũng có trạng thái prepare rồi mới ghi marker, nhưng chỉ nguyên tử **trong Kafka** (message + offset + state changelog), dùng marker + epoch fencing, không khoá record. Không bao trùm DB/HTTP.\n\n' +
     'Cho hệ đa thành phần: dùng **saga** (chuỗi bước bù trừ) hoặc **outbox**, không dùng 2PC.',
   essence:
     'Kafka EOS là "atomic trong một hệ thống" chứ không phải "atomic across hệ thống". Để nhất quán nhiều hệ thống, dùng saga/outbox + idempotency, không dùng transaction phân tán.',
@@ -729,7 +734,7 @@ SS.addQuestions('kafka', [
         "//  - mọi hệ thống tham gia phải hỗ trợ XA (nhiều DB/API hiện đại thì không)\n" +
         "//  - không mở rộng được ra quy mô lớn\n" +
         "\n" +
-        "// KAFKA EOS: KHÔNG phải distributed transaction. Nó chỉ nguyên tử TRONG Kafka.\n" +
+        "// KAFKA EOS: không phải XA giữa nhiều hệ thống. Nó chỉ nguyên tử TRONG Kafka.\n" +
         "producer.beginTransaction();\n" +
         "producer.send(recordA);                                   // topic A\n" +
         "producer.send(recordB);                                   // topic B\n" +
@@ -800,13 +805,13 @@ SS.addQuestions('kafka', [
   id: 'kafka-1rd252f',
   q: 'Xử lý poison message trong pipeline exactly-once mà không phá EOS?',
   answer:
-    'Poison message (không deserialize được / luôn ném exception) trong transaction: nếu bạn abort transaction để "bỏ qua" thì cả lô bị xử lý lại → kẹt vĩnh viễn.\n\n' +
+    'Poison message (không deserialize được / luôn ném exception) trong transaction: nếu bạn abort transaction để "bỏ qua" thì cả lô bị xử lý lại → kẹt vĩnh viễn. Nếu deserializer của consumer lỗi, `poll()` ném `RecordDeserializationException`, nên pipeline này nên đọc `byte[]` rồi tự parse trong vòng lặp.\n\n' +
     'Cách làm: bắt exception cho **từng record**, không để nó làm hỏng cả transaction. Record độc → gửi sang **DLQ topic** (vẫn trong transaction đang mở, như một output hợp lệ), rồi commit transaction bình thường (offset tiến qua record độc).\n\n' +
     'Spring Kafka: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer` phối hợp với `KafkaTransactionManager`.',
   essence:
     'Đừng abort transaction vì một record xấu. Biến "xử lý thất bại" thành "output hợp lệ = gửi vào DLQ", để offset vẫn tiến và EOS vẫn nguyên vẹn cho phần còn lại.',
   example:
-    'Lô 500 record, record thứ 200 sai schema: catch `SerializationException`, `producer.send(dlqRecord)` trong cùng transaction, tiếp tục record 201–500, `commitTransaction`. Offset qua 200, pipeline không kẹt, record độc nằm ở DLQ chờ điều tra.',
+    'Lô 500 record, record thứ 200 sai schema: tự parse `byte[]` và bắt lỗi parse, `producer.send(dlqRecord)` trong cùng transaction, tiếp tục record 201–500, `commitTransaction`. Offset qua 200, pipeline không kẹt, record độc nằm ở DLQ chờ điều tra.',
   viz: {
     type: 'flow',
     title: 'Poison message trong pipeline EOS — đừng abort transaction',
@@ -831,7 +836,7 @@ SS.addQuestions('kafka', [
         "    for (var r : records) {\n" +
         "        try {\n" +
         "            producer.send(new ProducerRecord<>(\"out\", r.key(), transform(r.value())));\n" +
-        "        } catch (DeserializationException | ValidationException e) {\n" +
+        "        } catch (ParseException | ValidationException e) {   // value là byte[], tự parse\n" +
         "            // MẤU CHỐT: gửi vào DLQ NGAY TRONG CÙNG TRANSACTION.\n" +
         "            // Không ném ra ngoài -> transaction vẫn commit -> offset vẫn tiến.\n" +
         "            producer.send(new ProducerRecord<>(\"out-dlq\", r.key(), r.value()));\n" +
@@ -842,12 +847,13 @@ SS.addQuestions('kafka', [
         "    producer.commitTransaction();\n" +
         "} catch (KafkaException e) {          // chỉ abort với lỗi HẠ TẦNG\n" +
         "    producer.abortTransaction();\n" +
+        "    // rồi seek các partition về đầu lô trước khi thử lại\n" +
         "}\n" +
         "// Nguyên tắc: lỗi DỮ LIỆU -> chuyển sang DLQ trong transaction, tiếp tục chạy.\n" +
         "//             lỗi HẠ TẦNG -> abort và thử lại nguyên lô.\n" +
         "\n" +
         "// Với Kafka Streams, cùng ý tưởng qua handler:\n" +
-        "p.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG,\n" +
+        "p.put(StreamsConfig.DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG,\n" +
         "      LogAndContinueExceptionHandler.class);   // hoặc tự viết để đẩy vào DLQ",
     },
   ],
@@ -1059,15 +1065,16 @@ SS.addQuestions('kafka', [
       code:
         "// CÁCH 1: POLLING PUBLISHER — job định kỳ quét bảng outbox\n" +
         "@Scheduled(fixedDelay = 500)\n" +
-        "@Transactional\n" +
-        "public void publish() {\n" +
+        "@Transactional(rollbackFor = Exception.class)\n" +
+        "public void publish() throws Exception {\n" +
         "    var events = jdbc.query(\"\"\"\n" +
         "        SELECT * FROM outbox WHERE published_at IS NULL\n" +
         "        ORDER BY created_at LIMIT 100\n" +
         "        FOR UPDATE SKIP LOCKED\n" +
         "        \"\"\", mapper);                      // SKIP LOCKED: nhiều instance không giành nhau\n" +
         "    for (var e : events) {\n" +
-        "        producer.send(new ProducerRecord<>(\"orders\", e.aggregateId(), e.payload()));\n" +
+        "        // Chờ broker ack rồi mới đánh dấu, nếu không send lỗi vẫn bị coi là đã gửi\n" +
+        "        producer.send(new ProducerRecord<>(\"orders\", e.aggregateId(), e.payload())).get();\n" +
         "        jdbc.update(\"UPDATE outbox SET published_at = now() WHERE id = ?\", e.id());\n" +
         "    }\n" +
         "}\n" +
@@ -1162,7 +1169,11 @@ SS.addQuestions('kafka', [
         "    \"\"\", r.key(), status);\n" +
         "\n" +
         "// Và đóng consumer cho tử tế để không phải chờ hết session timeout:\n" +
-        "Runtime.getRuntime().addShutdownHook(new Thread(consumer::wakeup));",
+        "Thread main = Thread.currentThread();\n" +
+        "Runtime.getRuntime().addShutdownHook(new Thread(() -> {\n" +
+        "    consumer.wakeup();\n" +
+        "    try { main.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }\n" +
+        "}));",
     },
   ],
 },

@@ -106,7 +106,7 @@
           { label: 'Producer gửi với acks=all → leader (B1) nhận, ghi log', run: function () { set({ isr: 3, note: 'Leader B1 nhận message' }); } },
           { label: 'B2, B3 fetch & replicate. Đủ trong ISR → leader ack cho producer', run: function () { set({ isr: 3, note: 'acks=all thoả: message có ở cả 3 replica trong ISR' }); } },
           { label: 'B3 tụt hậu quá replica.lag.time.max.ms → bị loại khỏi ISR', run: function () { set({ isr: 2, note: 'ISR = {B1, B2}. min.insync.replicas=2 vẫn thoả → còn ghi được' }); } },
-          { label: 'Leader B1 chết → controller bầu B2 (trong ISR) làm leader mới', run: function () { set({ isr: 2, leaderDead: true, newLeader: 1, note: 'Không mất message đã committed. Nếu ISR rỗng → partition offline' }); } },
+          { label: 'Leader B1 chết → controller bầu B2 (trong ISR) làm leader mới', run: function () { set({ isr: 2, leaderDead: true, newLeader: 1, note: 'Không mất message đã committed. Hết replica đủ điều kiện → partition offline' }); } },
         ],
       };
     },

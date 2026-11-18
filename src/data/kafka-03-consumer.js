@@ -5,8 +5,8 @@ SS.addQuestions('kafka', [
   q: 'Vòng lặp poll của consumer hoạt động thế nào? `max.poll.records`, `max.poll.interval.ms`?',
   answer:
     'Consumer chạy vòng lặp: `poll(timeout)` → nhận tối đa `max.poll.records` record (mặc định 500) → xử lý → commit offset → lặp lại.\n\n' +
-    '`poll()` còn làm việc nền quan trọng: gửi heartbeat, tham gia rebalance. Vì vậy **phải gọi `poll()` đều đặn**.\n\n' +
-    '`max.poll.interval.ms` (mặc định 5 phút): nếu khoảng cách giữa hai lần `poll()` vượt ngưỡng này (xử lý lô quá lâu), broker coi consumer "chết" → **loại khỏi group và rebalance**.',
+    '`poll()` còn tham gia rebalance, cập nhật metadata và kích hoạt auto-commit. Heartbeat chạy ở thread nền, nhưng consumer sẽ rời group nếu ứng dụng ngừng gọi `poll()` quá lâu. Vì vậy **phải gọi `poll()` đều đặn**.\n\n' +
+    '`max.poll.interval.ms` (mặc định 5 phút): nếu khoảng cách giữa hai lần `poll()` vượt ngưỡng này (xử lý lô quá lâu), consumer bị coi là lỗi → **rời group và kích hoạt rebalance**.',
   essence:
     '`poll()` vừa lấy dữ liệu vừa "giữ chỗ" trong group. Xử lý một lô lâu hơn `max.poll.interval.ms` = tự bị đá ra. Giảm `max.poll.records` hoặc tăng interval khi xử lý nặng.',
   example:
@@ -16,9 +16,9 @@ SS.addQuestions('kafka', [
     title: 'Vòng lặp poll — poll() cũng "giữ chỗ" trong group',
     nodes: ['poll(timeout)', 'nhận ≤ max.poll.records', 'xử lý lô', 'commit offset', 'lặp lại'],
     steps: [
-      { to: 0, label: 'poll() còn gửi heartbeat + tham gia rebalance — phải gọi đều đặn' },
+      { to: 0, label: 'poll() tham gia rebalance + giữ consumer còn hoạt động — phải gọi đều đặn' },
       { to: 1, label: 'mặc định 500 record' },
-      { to: 2, label: 'xử lý lâu hơn max.poll.interval.ms (5 phút) → broker coi consumer chết → rebalance' },
+      { to: 2, label: 'xử lý lâu hơn max.poll.interval.ms (5 phút) → consumer bị coi là lỗi → rebalance' },
       { to: 3, label: 'giảm max.poll.records hoặc tăng interval khi xử lý nặng' },
     ],
   },
@@ -43,7 +43,7 @@ SS.addQuestions('kafka', [
         "// gửi offset auto-commit, và cập nhật metadata. Không gọi poll() = coi như chết.\n" +
         "\n" +
         "// BẪY KINH ĐIỂN: xử lý một record mất 1 giây, max.poll.records=500\n" +
-        "// -> 500 giây > max.poll.interval.ms 300 giây -> broker coi consumer đã chết\n" +
+        "// -> 500 giây > max.poll.interval.ms 300 giây -> consumer bị coi là lỗi\n" +
         "// -> ĐÁ RA KHỎI GROUP giữa chừng -> rebalance -> commit thất bại\n" +
         "// -> lô đó bị xử lý LẠI -> lặp vô hạn.\n" +
         "// Chữa: giảm max.poll.records (ví dụ 50), hoặc tăng max.poll.interval.ms,\n" +
@@ -65,7 +65,7 @@ SS.addQuestions('kafka', [
   essence:
     'Rebalance là cách group tự cân bằng khi thành viên/partition thay đổi. Nó cần thiết nhưng tốn kém — mục tiêu vận hành là làm nó **hiếm** và **nhanh**.',
   example:
-    'Deploy rolling 6 pod lần lượt restart → 6 lần rebalance, mỗi lần vài giây không xử lý → lag tăng vọt. Giảm tác động bằng static membership + cooperative rebalancing + `group.initial.rebalance.delay.ms`.',
+    'Deploy rolling 6 pod lần lượt restart → có thể tới 12 lần rebalance (mỗi pod rời rồi vào lại), mỗi lần vài giây không xử lý → lag tăng vọt. Giảm tác động bằng static membership + cooperative rebalancing.',
   viz: {
     type: 'tree',
     title: 'Rebalance — mục tiêu vận hành: làm nó HIẾM và NHANH',
@@ -103,7 +103,11 @@ SS.addQuestions('kafka', [
         "p.put(\"max.poll.records\", \"100\");                   // xử lý một lô nhanh hơn\n" +
         "\n" +
         "// Đóng đúng cách để consumer rời group NGAY, không phải chờ hết session timeout:\n" +
-        "Runtime.getRuntime().addShutdownHook(new Thread(consumer::wakeup));\n" +
+        "Thread main = Thread.currentThread();\n" +
+        "Runtime.getRuntime().addShutdownHook(new Thread(() -> {\n" +
+        "    consumer.wakeup();\n" +
+        "    try { main.join(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }\n" +
+        "}));                             // chờ main chạy xong close() rồi JVM mới thoát\n" +
         "try { pollLoop(); }\n" +
         "catch (WakeupException e) { /* thoát bình thường */ }\n" +
         "finally { consumer.close(); }   // gửi LeaveGroup -> rebalance nhanh gọn",
@@ -115,15 +119,15 @@ SS.addQuestions('kafka', [
   id: 'kafka-az21as',
   q: 'Eager rebalancing và cooperative (incremental) rebalancing khác nhau thế nào?',
   answer:
-    '**Eager** (`RangeAssignor`, `RoundRobinAssignor`): mọi consumer **revoke tất cả** partition, rebalance, rồi nhận lại phân bổ mới. Toàn group dừng xử lý trong suốt quá trình.\n\n' +
-    '**Cooperative** (`CooperativeStickyAssignor`, mặc định từ Kafka 3.x cho nhiều client): chỉ **revoke những partition cần chuyển chủ**, các partition khác vẫn được xử lý bình thường. Rebalance diễn ra qua nhiều vòng nhỏ.',
+    '**Eager** (`RangeAssignor`, `RoundRobinAssignor`, `StickyAssignor`): mọi consumer **revoke tất cả** partition, rebalance, rồi nhận lại phân bổ mới. Toàn group dừng xử lý trong suốt quá trình.\n\n' +
+    '**Cooperative** (`CooperativeStickyAssignor`): chỉ **revoke những partition cần chuyển chủ**, các partition khác vẫn được xử lý bình thường. Rebalance diễn ra qua nhiều vòng nhỏ. Mặc định của Java client là `[RangeAssignor, CooperativeStickyAssignor]`, nên group vẫn dùng Range cho tới khi bỏ Range khỏi danh sách.',
   essence:
     'Eager: "buông hết, chia lại". Cooperative: "chỉ trao đổi phần chênh lệch". Cooperative giảm mạnh thời gian gián đoạn khi scale/deploy.',
   example:
     'Group 10 consumer, thêm 1 consumer thứ 11: eager → cả 10 dừng, chia lại 100% partition. Cooperative → chỉ ~1/11 partition được chuyển sang consumer mới, 90%+ luồng xử lý không bị gián đoạn.',
   viz: {
     type: 'compare',
-    cols: ['Eager (Range, RoundRobin)', 'Cooperative (CooperativeSticky)'],
+    cols: ['Eager (Range, RoundRobin, Sticky)', 'Cooperative (CooperativeSticky)'],
     rows: [
       ['Khi rebalance', 'revoke TẤT CẢ partition', 'chỉ revoke partition cần chuyển chủ'],
       ['Xử lý trong lúc rebalance', 'toàn group dừng', 'partition khác vẫn chạy'],
@@ -136,7 +140,7 @@ SS.addQuestions('kafka', [
       lang: "properties",
       title: "Nhả hết vs chỉ nhả phần cần đổi",
       code:
-        "# EAGER (RangeAssignor, RoundRobinAssignor — kiểu cũ):\n" +
+        "# EAGER (RangeAssignor, RoundRobinAssignor, StickyAssignor):\n" +
         "#   mọi consumer NHẢ TOÀN BỘ partition -> chờ phân công lại -> nhận về.\n" +
         "#   Cả group ngừng xử lý trong suốt quá trình. Group 50 consumer mà một pod\n" +
         "#   restart cũng làm cả 50 dừng.\n" +
@@ -153,8 +157,9 @@ SS.addQuestions('kafka', [
         "#   bước 1: deploy với strategy = [CooperativeSticky, RangeAssignor]  (cả hai)\n" +
         "#   bước 2: khi mọi instance đã chạy bản trên -> deploy chỉ còn CooperativeSticky\n" +
         "\n" +
-        "# Kafka 3.7+ có KIP-848 (giao thức rebalance mới, broker tự tính phân công)\n" +
-        "# -> giảm mạnh thời gian rebalance, đang dần thành mặc định.",
+        "# KIP-848 GA từ Kafka 4.0: broker tự tính phân công. Client bật bằng\n" +
+        "# group.protocol=consumer (mặc định vẫn là classic) và khi đó không đặt\n" +
+        "# partition.assignment.strategy.",
     },
   ],
 },
@@ -163,7 +168,7 @@ SS.addQuestions('kafka', [
   id: 'kafka-1a7hvmc',
   q: 'Các chiến lược gán partition (partition assignment strategy)?',
   answer:
-    '- **RangeAssignor** (mặc định cũ): với mỗi topic, chia partition liên tiếp cho consumer theo thứ tự. Dễ lệch tải khi nhiều topic ít partition.\n' +
+    '- **RangeAssignor** (đứng đầu danh sách mặc định): với mỗi topic, chia partition liên tiếp cho consumer theo thứ tự. Dễ lệch tải khi nhiều topic ít partition.\n' +
     '- **RoundRobinAssignor**: rải toàn bộ (topic, partition) xoay vòng qua các consumer → cân bằng hơn.\n' +
     '- **StickyAssignor**: cân bằng nhưng **giữ nguyên** phân bổ cũ nhiều nhất có thể khi rebalance → ít xáo trộn.\n' +
     '- **CooperativeStickyAssignor**: sticky + cooperative protocol (khuyến nghị hiện nay).',
@@ -185,7 +190,7 @@ SS.addQuestions('kafka', [
       lang: "properties",
       title: "Bốn chiến lược và điểm khác biệt thật sự",
       code:
-        "# RangeAssignor (mặc định cũ) — chia theo DẢI, cho TỪNG topic một.\n" +
+        "# RangeAssignor (đứng đầu danh sách mặc định) — chia theo DẢI, cho TỪNG topic một.\n" +
         "#   2 topic x 3 partition, 2 consumer -> C1 nhận p0,p1 của CẢ HAI topic; C2 nhận p2.\n" +
         "#   -> LỆCH TẢI có hệ thống khi số partition không chia hết cho số consumer.\n" +
         "#   Ưu điểm duy nhất: cùng partition number của nhiều topic về cùng consumer -> tiện join.\n" +
@@ -202,7 +207,7 @@ SS.addQuestions('kafka', [
         "partition.assignment.strategy=org.apache.kafka.clients.consumer.CooperativeStickyAssignor\n" +
         "\n" +
         "# Tự viết khi cần logic đặc thù (ví dụ gán theo rack để tránh phí liên vùng):\n" +
-        "#   kế thừa AbstractPartitionAssignor và cài đặt assign().\n" +
+        "#   cài đặt interface ConsumerPartitionAssignor.\n" +
         "# Mọi consumer trong group phải có ÍT NHẤT MỘT chiến lược chung, nếu không\n" +
         "# group không thể hình thành.",
     },
@@ -213,7 +218,7 @@ SS.addQuestions('kafka', [
   id: 'kafka-rox1og',
   q: 'Commit offset: auto-commit và manual commit (`commitSync`/`commitAsync`)?',
   answer:
-    '- **Auto** (`enable.auto.commit=true`): consumer tự commit offset của lô *đã poll* theo `auto.commit.interval.ms` (5s). Đơn giản nhưng có thể commit **trước khi xử lý xong** → mất message khi crash; hoặc xử lý xong nhưng chưa tới kỳ commit → xử lý lại khi rebalance.\n' +
+    '- **Auto** (`enable.auto.commit=true`): với classic consumer, khi tới kỳ `auto.commit.interval.ms` (5s), lần `poll()` kế tiếp commit offset của các record đã trả về. Xử lý xong lô rồi mới poll thì vẫn at-least-once; nếu đẩy record sang thread khác rồi poll tiếp, offset có thể đi trước việc xử lý → **mất message** khi crash.\n' +
     '- **Manual**: `enable.auto.commit=false`, gọi `commitSync()` (chặn, retry, an toàn — dùng khi shutdown/sau lô) hoặc `commitAsync()` (không chặn, throughput cao, không retry — dùng trong vòng lặp).\n\n' +
     'Mẫu phổ biến: `commitAsync` mỗi lô + `commitSync` một lần trong `finally` khi thoát.',
   essence:
@@ -224,9 +229,9 @@ SS.addQuestions('kafka', [
     type: 'compare',
     cols: ['auto-commit', 'commitSync()', 'commitAsync()'],
     rows: [
-      ['Khi nào commit', 'định kỳ auto.commit.interval.ms (5s)', 'ngay, chặn, retry', 'ngay, không chặn, không retry'],
-      ['Rủi ro', 'commit trước khi xử lý xong → mất; hoặc xử lý lại khi rebalance', 'chậm hơn', 'commit có thể "tụt" nếu lỗi'],
-      ['Dùng', 'đơn giản, chấp nhận at-most/at-least tuỳ timing', 'shutdown / sau lô / finally', 'trong vòng lặp (throughput)'],
+      ['Khi nào commit', 'trong poll() khi tới kỳ auto.commit.interval.ms (5s)', 'ngay, chặn, retry', 'ngay, không chặn, không retry'],
+      ['Rủi ro', 'xử lý bất đồng bộ có thể mất; crash trước kỳ commit thì xử lý lại', 'chậm hơn', 'commit có thể "tụt" nếu lỗi'],
+      ['Dùng', 'vòng lặp đồng bộ đơn giản (at-least-once)', 'shutdown / sau lô / finally', 'trong vòng lặp (throughput)'],
     ],
   },
   demo: [
@@ -234,13 +239,13 @@ SS.addQuestions('kafka', [
       lang: "java",
       title: "Ba kiểu commit và ngữ nghĩa mất/trùng của từng kiểu",
       code:
-        "// AUTO-COMMIT: commit theo ĐỒNG HỒ, không theo tiến độ xử lý -> có thể MẤT message\n" +
+        "// AUTO-COMMIT (classic): tới kỳ thì lần poll() kế tiếp commit các record đã trả về\n" +
         "p.put(\"enable.auto.commit\", \"true\");\n" +
         "p.put(\"auto.commit.interval.ms\", \"5000\");\n" +
-        "// poll xong -> 5s trôi qua -> auto-commit chạy -> crash giữa lúc xử lý\n" +
-        "// -> khởi động lại bỏ qua những message chưa xử lý xong. Tránh ở hệ thống nghiêm túc.\n" +
+        "// Vòng lặp đồng bộ: xử lý hết lô rồi mới poll -> at-least-once.\n" +
+        "// Đẩy sang thread pool rồi poll tiếp -> commit có thể vượt worker -> crash là MẤT message.\n" +
         "\n" +
-        "p.put(\"enable.auto.commit\", \"false\");    // luôn tắt\n" +
+        "p.put(\"enable.auto.commit\", \"false\");    // tắt để tự quyết thời điểm commit\n" +
         "\n" +
         "// commitSync: CHẶN và tự retry tới khi thành công. Chậm nhưng chắc.\n" +
         "while (running) {\n" +
@@ -384,7 +389,7 @@ SS.addQuestions('kafka', [
     'Consumer chạy một **heartbeat thread** riêng gửi tín hiệu "còn sống" tới group coordinator mỗi `heartbeat.interval.ms` (mặc định 3s).\n\n' +
     'Nếu coordinator không nhận heartbeat trong `session.timeout.ms` (mặc định 45s, dải cho phép `group.min/max.session.timeout.ms`) → coi consumer chết → rebalance.\n\n' +
     'Quy tắc: `heartbeat.interval.ms` ≈ 1/3 `session.timeout.ms`.\n\n' +
-    'Lưu ý: heartbeat tách khỏi `poll()`, nên consumer có thể "còn sống" (heartbeat ok) nhưng vẫn bị đá vì xử lý lô quá `max.poll.interval.ms`.',
+    'Lưu ý: heartbeat tách khỏi `poll()`, nên consumer có thể "còn sống" (heartbeat ok) nhưng vẫn bị đá vì xử lý lô quá `max.poll.interval.ms`. Với `group.protocol=consumer` (KIP-848), client không đặt `session.timeout.ms` và `heartbeat.interval.ms`; các giá trị này do broker quản lý.',
   essence:
     '`session.timeout.ms` phát hiện **process chết / mạng đứt** (qua heartbeat). `max.poll.interval.ms` phát hiện **xử lý bị treo** (qua nhịp poll). Hai cơ chế bổ sung nhau.',
   example:
@@ -468,8 +473,8 @@ SS.addQuestions('kafka', [
         "\n" +
         "# ĐÁNH ĐỔI phải hiểu rõ: consumer CHẾT THẬT thì partition của nó bị BỎ TRỐNG\n" +
         "# cho tới hết session.timeout.ms (ở đây là 2 phút) -> lag tăng trong khoảng đó.\n" +
-        "# Đặt session.timeout đủ dài để bao restart, nhưng đủ ngắn để không chịu nổi\n" +
-        "# một pod chết hẳn.\n" +
+        "# Đặt session.timeout đủ dài để bao restart, nhưng đủ ngắn để pod chết hẳn\n" +
+        "# không làm partition bỏ trống quá lâu.\n" +
         "\n" +
         "# Trùng group.instance.id giữa hai instance -> FencedInstanceIdException,\n" +
         "# instance cũ bị đá ra. Đừng bao giờ để hai pod dùng chung một ID.",
@@ -526,6 +531,7 @@ SS.addQuestions('kafka', [
         "    r.topic() + \"-\" + r.partition() + \"-\" + r.offset()) == 1;\n" +
         "if (!isNew) return;      // đã xử lý rồi, bỏ qua\n" +
         "process(r);\n" +
+        "// INSERT và process phải cùng transaction DB, nếu không crash giữa hai bước sẽ mất việc.\n" +
         "// Nhớ đặt TTL/job dọn bảng này, nếu không nó phình vô hạn.\n" +
         "\n" +
         "// 3) Lưu offset CÙNG transaction với dữ liệu nghiệp vụ -> exactly-once phía sink\n" +
@@ -545,7 +551,7 @@ SS.addQuestions('kafka', [
     'Callback gắn khi `subscribe(topics, listener)`:\n' +
     '- `onPartitionsRevoked(partitions)`: gọi **trước khi** consumer mất các partition này. Nơi để **commit offset cuối** và flush state/buffer.\n' +
     '- `onPartitionsAssigned(partitions)`: gọi **sau khi** nhận partition mới. Nơi để **nạp state** (seek tới offset lưu ở nơi khác, warm cache).\n' +
-    '- `onPartitionsLost(partitions)` (cooperative): mất partition bất thường, không kịp commit.',
+    '- `onPartitionsLost(partitions)`: mất partition bất thường, có thể đã có chủ mới nên không commit. Mặc định nó gọi `onPartitionsRevoked`, vì vậy cần override nếu callback revoke có commit.',
   essence:
     'Listener là hook để bàn giao partition sạch sẽ: bên nhả thì lưu tiến độ, bên nhận thì khôi phục ngữ cảnh. Bắt buộc nếu bạn quản lý offset/state ngoài Kafka.',
   example:
@@ -557,7 +563,7 @@ SS.addQuestions('kafka', [
     steps: [
       { to: 0, label: 'TRƯỚC khi mất partition: commit offset cuối, flush state/buffer' },
       { to: 2, label: 'SAU khi nhận partition mới: nạp state, seek tới offset lưu ở nơi khác, warm cache' },
-      { to: 3, label: 'cooperative: mất partition bất thường, không kịp commit' },
+      { to: 3, label: 'mất partition bất thường (mọi assignor): không commit ở đây' },
     ],
   },
   demo: [
@@ -590,7 +596,7 @@ SS.addQuestions('kafka', [
         "\n" +
         "    @Override\n" +
         "    public void onPartitionsLost(Collection<TopicPartition> partitions) {\n" +
-        "        // Chỉ với cooperative: partition bị lấy mất ĐỘT NGỘT (đã hết session).\n" +
+        "        // Partition bị lấy mất ĐỘT NGỘT (ví dụ đã hết session), với mọi assignor.\n" +
         "        // ĐỪNG commit ở đây — partition đã có chủ mới, commit sẽ ghi đè sai.\n" +
         "        discardLocalState(partitions);\n" +
         "    }\n" +
@@ -627,7 +633,7 @@ SS.addQuestions('kafka', [
       title: "Điều tiết luồng và điều khiển vị trí đọc",
       code:
         "// pause/resume: tạm ngừng nhận dữ liệu của MỘT SỐ partition mà VẪN gọi poll()\n" +
-        "// -> vẫn gửi nhịp tim, KHÔNG bị đá khỏi group. Đây là chìa khoá để xử lý\n" +
+        "// -> vẫn giữ nhịp poll, KHÔNG bị đá khỏi group. Đây là chìa khoá để xử lý\n" +
         "// bất đồng bộ mà không vi phạm max.poll.interval.ms.\n" +
         "var records = consumer.poll(Duration.ofMillis(1000));\n" +
         "for (var r : records) queue.offer(r);              // đẩy sang thread pool\n" +
@@ -637,13 +643,13 @@ SS.addQuestions('kafka', [
         "} else if (queue.size() < LOW_WATERMARK) {\n" +
         "    consumer.resume(consumer.assignment());         // nhận lại\n" +
         "}\n" +
-        "consumer.poll(Duration.ZERO);   // vẫn phải poll đều để giữ chỗ trong group\n" +
+        "// Vòng lặp tiếp theo vẫn poll như trên. Đừng poll thêm rồi bỏ kết quả: record đó sẽ mất.\n" +
         "\n" +
         "// Dùng pause khi: hệ thống đích (DB, API) đang chậm/lỗi, cần chờ hồi phục\n" +
         "// mà không muốn mất quyền sở hữu partition.\n" +
         "\n" +
         "// seek: điều khiển vị trí đọc — chỉ dùng được sau khi đã có phân công partition\n" +
-        "consumer.poll(Duration.ZERO);                        // kích hoạt phân công\n" +
+        "while (consumer.assignment().isEmpty()) consumer.poll(Duration.ofMillis(100));\n" +
         "consumer.seek(new TopicPartition(\"orders\", 0), 5000);\n" +
         "consumer.seekToBeginning(consumer.assignment());     // phát lại toàn bộ\n" +
         "consumer.seekToEnd(consumer.assignment());           // bỏ qua tồn đọng\n" +
@@ -701,7 +707,7 @@ SS.addQuestions('kafka', [
         "// MÔ HÌNH 2: một consumer + thread pool xử lý -> vượt trần partition\n" +
         "var records = consumer.poll(Duration.ofSeconds(1));\n" +
         "for (var r : records) {\n" +
-        "    int slot = Math.abs(r.key().hashCode()) % workers.length;\n" +
+        "    int slot = Math.floorMod(r.key().hashCode(), workers.length);\n" +
         "    workers[slot].submit(() -> process(r));   // PHÂN LUỒNG THEO KEY để giữ thứ tự\n" +
         "}\n" +
         "// Bắt buộc kèm pause()/resume() và commit thủ công theo tiến độ THẬT của worker,\n" +
@@ -756,10 +762,8 @@ SS.addQuestions('kafka', [
         "max.partition.fetch.bytes=1048576   # tối đa mỗi partition trả về một lần\n" +
         "fetch.max.bytes=52428800            # tối đa cho CẢ fetch request\n" +
         "\n" +
-        "# BẪY: max.partition.fetch.bytes phải >= message lớn nhất, nếu không consumer\n" +
-        "# sẽ TREO vĩnh viễn ở message đó (không đọc nổi, không tiến lên được).\n" +
-        "# Kafka hiện đại vẫn trả về message vượt trần nếu nó là record đầu tiên,\n" +
-        "# nhưng đừng dựa vào đó.",
+        "# LƯU Ý: hai giới hạn này không phải trần tuyệt đối. Batch đầu tiên của partition\n" +
+        "# không rỗng đầu tiên vẫn được trả về dù vượt trần, để consumer không bị kẹt.",
     },
   ],
 },
