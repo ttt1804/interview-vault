@@ -1,0 +1,1 @@
+import java.util.*; class E { void f(){ Object x=new ArrayList<String>(); if (x instanceof List<String>) {} } }

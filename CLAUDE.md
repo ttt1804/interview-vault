@@ -53,6 +53,7 @@ Env var đọc lúc build: `SITE_URL` (mặc định `package.json` → `homepag
 | `src/render-user.mjs` | `/tai-khoan`, `/privacy` |
 | `src/serve.mjs` | static server tối giản để preview |
 | `tools/add-demos.mjs` | chèn field `demo` hàng loạt từ file patch (không tham gia build) |
+| `tools/apply-content-patch.mjs` | áp bản vá nội dung nguyên văn, dừng nếu đoạn cũ không khớp đúng một chỗ (không tham gia build) |
 
 `page({ root, scripts })`: `root` là tiền tố tương đối (`''` trang chủ, `'../'` trang con) —
 mọi link/asset phải đi qua nó. `enhance.js` + `auth.js` luôn được nhúng; script khác truyền qua
@@ -218,6 +219,12 @@ cầu sang câu hỏi kế tiếp.
 
 **Tiêu đề mục bắt buộc dùng `## `, không dùng `**đậm**`** — vì `relate.mjs` lấy 6 term in
 đậm/`code` đầu tiên làm chip khái niệm, bôi đậm tiêu đề sẽ làm hỏng chip.
+
+## Rà soát nội dung
+
+Khi kiểm tra hoặc sửa độ chính xác của một chủ đề, đọc `docs/content-review/README.md` trước và làm theo quy trình
+ở đó. Hồ sơ mỗi chủ đề nằm ở `docs/content-review/<chủ-đề>/`; cập nhật `review.md`, `history.md`, `sources.md` và bảng
+trạng thái sau mỗi đợt.
 
 ## Lưu ý
 
