@@ -207,7 +207,6 @@
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
       art.classList.toggle('is-learned', on);
       updateProgress();
-      if (window.IVAuth && window.IVAuth.pushProgress) window.IVAuth.pushProgress();
       var wasCurrent = art === current;
       var next = on && wasCurrent ? nextFrom(art, 1, true) : null;
       if (hideLearned) applyVisibility();
@@ -288,10 +287,22 @@
     armedReset = null;
     updateProgress();
   }
+  /* Bỏ dấu đã đọc + lịch ôn của chủ đề này; streak và số liệu theo ngày giữ nguyên */
+  function resetTopic() {
+    function inTopic(id) { return id.slice(0, id.lastIndexOf('-')) === topicId; }
+    var learned = store.read(), id;
+    for (id in learned) if (inTopic(id)) delete learned[id];
+    store.write(learned);
+    try {
+      var srs = JSON.parse(localStorage.getItem('iv-srs')) || {};
+      for (id in srs) if (inTopic(id)) delete srs[id];
+      localStorage.setItem('iv-srs', JSON.stringify(srs));
+    } catch (e) {}
+    window.dispatchEvent(new Event('iv-progress'));
+  }
   document.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-action="reset-learned"]') : null;
     if (!b) { disarmReset(); return; }
-    if (!window.IVAuth) return;
     if (armedReset !== b) {
       disarmReset();
       armedReset = b;
@@ -305,7 +316,7 @@
     if (Date.now() - armedAt < 400) return;
     disarmReset();
     if (mobileMenu) mobileMenu.open = false;
-    window.IVAuth.resetTopic(topicId);
+    resetTopic();
     applyVisibility();
     forgetLast();
     removeResume();

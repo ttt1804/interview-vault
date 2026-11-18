@@ -53,22 +53,6 @@ npm run serve
 > Nếu muốn dùng làm **user site** (`<username>.github.io`): đặt tên repo là `<username>.github.io`
 > — mọi thứ vẫn chạy, base URL thành `https://<username>.github.io/`.
 
-## Đăng nhập Google (tuỳ chọn)
-
-Backend riêng trong [`analytics/`](analytics/) — **Cloudflare Worker + D1**. Đặt **repo variable** `ANALYTICS_URL`
-= URL Worker, `GOOGLE_CLIENT_ID` + secret `SESSION_SECRET`
-cho Worker — xem [`analytics/README.md`](analytics/README.md) phần **C**. Chưa cấu hình thì nút
-"Đăng nhập" tự ẩn, site chạy y như cũ.
-
-Khi bật, người dùng đăng nhập Google (sau **màn hình đồng ý** nêu rõ dữ liệu được lưu) để:
-- Đồng bộ tiến độ luyện tập (`iv-srs` / câu đã đọc / log) giữa các thiết bị — merge kiểu union (trừ chủ đề vừa "Bỏ đánh dấu tất cả"),
-  đẩy lên server sau mỗi lần chấm (debounce 2.5s).
-- Trang **`/tai-khoan/`**: dashboard cá nhân (đã đọc / cần ôn / streak / theo chủ đề),
-  **xoá tài khoản + toàn bộ dữ liệu**.
-- **`/privacy/`**: chính sách bảo mật (bắt buộc cho OAuth consent screen của Google).
-- Quyền **premium**: đường ống entitlement có sẵn (`tier` trong `/me`), cấp thủ công qua
-  `POST /admin/grant`. Chưa có nội dung premium.
-
 ## SEO
 
 - Mỗi chủ đề là một URL riêng (`/java/`, `/kafka/`…) với toàn bộ nội dung trong HTML.
@@ -91,19 +75,15 @@ src/
   highlight.mjs         # tô màu cú pháp lúc build cho khối demo (tokenizer tự viết)
   templates.mjs         # <head> đầy đủ SEO, header, footer, breadcrumb, khung trang
   render.mjs            # sinh trang chủ, trang chủ đề, /luyen-tap, sitemap, 404
-  render-user.mjs      # sinh /tai-khoan, /privacy
-  build.mjs             # đọc data -> kiểm tra toàn vẹn -> ghi dist/  (env ANALYTICS_URL, GOOGLE_CLIENT_ID)
+  render-privacy.mjs    # sinh /privacy
+  build.mjs             # đọc data -> kiểm tra toàn vẹn -> ghi dist/
   serve.mjs             # máy chủ tĩnh tối giản để xem thử
 assets/
   styles.css           # thiết kế (IBM Plex Sans/Mono + Lora; màu theo chủ đề; sáng/tối)
   practice.js          # trang /luyen-tap: lọc + phiên luyện + spaced repetition
   enhance.js            # tiện ích client (không bắt buộc)
-  auth.js              # đăng nhập Google + modal đồng ý + đồng bộ tiến độ
-  account.js           # trang /tai-khoan
 tools/
   add-demos.mjs        # chèn field demo hàng loạt từ file patch (không tham gia build)
-analytics/             # Cloudflare Worker + D1 — thống kê truy cập + IP + tài khoản Google (deploy riêng)
-  src/{worker,analytics,auth,users,lib}.js
 static/                # file copy nguyên trạng ra gốc site (google….html, BingSiteAuth.xml, CNAME…)
 .github/workflows/deploy.yml
 ```

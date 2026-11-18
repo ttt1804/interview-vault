@@ -131,7 +131,7 @@ function diagramFigure(id) {
 }
 
 /* Trang chủ đề */
-export function renderTopicPage({ topic, list, topics, siteUrl, hasDiagrams, hasViz, analyticsUrl, googleClientId }) {
+export function renderTopicPage({ topic, list, topics, siteUrl, hasDiagrams, hasViz }) {
   const url = `${siteUrl}${topic.id}/`;
   const groups = groupByCat(list);
   const idx = topics.findIndex((t) => t.id === topic.id);
@@ -227,8 +227,6 @@ ${footer('../')}`;
       root: '../',
       ogType: 'article',
       jsonld: faqJsonLd(topic, list, url),
-      analyticsUrl,
-      googleClientId,
     }),
     body,
   });
@@ -246,7 +244,7 @@ export function practiceData(questions) {
 }
 
 /* Trang luyện tập /luyen-tap/ — duyệt + lọc + phiên luyện (spaced repetition, client-side) */
-export function renderPracticePage({ topics, questions, siteUrl, analyticsUrl, googleClientId }) {
+export function renderPracticePage({ topics, questions, siteUrl }) {
   const url = `${siteUrl}luyen-tap/`;
   const nameOf = new Map(topics.map((t) => [t.id, t.name]));
 
@@ -392,15 +390,13 @@ ${footer('../')}`;
       keywords: 'luyện tập phỏng vấn, ôn phỏng vấn backend, flashcard câu hỏi phỏng vấn, spaced repetition java',
       canonical: url,
       root: '../',
-      analyticsUrl,
-      googleClientId,
     }),
     body,
   });
 }
 
 /* Trang chủ */
-export function renderHub({ topics, counts, total, siteUrl, analyticsUrl, googleClientId }) {
+export function renderHub({ topics, counts, total, siteUrl }) {
   const cards = topics
     .map(
       (t) => `<a class="topic-card" href="${t.id}/" data-topic="${t.id}">
@@ -485,8 +481,6 @@ ${footer('')}`;
       canonical: siteUrl,
       root: '',
       jsonld,
-      analyticsUrl,
-      googleClientId,
     }),
     body,
   });

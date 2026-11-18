@@ -221,7 +221,6 @@
 
   function advance(g) {
     grade(queue[qi], g); results[g === 'good' ? 'good' : g === 'hard' ? 'hard' : 'again']++; logToday();
-    if (window.IVAuth && window.IVAuth.pushProgress) window.IVAuth.pushProgress();
     var dot = $('[data-pr-dots]').children[qi];
     if (dot) dot.className = 'pr-pdot is-' + (g === 'again' ? 'again' : g === 'hard' ? 'hard' : 'good');
     qi++;
@@ -352,12 +351,6 @@
       var m = { Digit1: 'again', Digit2: 'hard', Digit3: 'good' }[e.code];
       if (m) { e.preventDefault(); $('[data-pr-grade] [data-g="' + m + '"]').click(); }
     }
-  });
-
-  /* ---------- đồng bộ từ tài khoản ---------- */
-  window.addEventListener('iv-progress', function () {
-    learned = read(K_LEARNED, {}); srs = read(K_SRS, {}); log = read(K_LOG, {});
-    if (playerEl.hidden) { paintStats(); paintDots(); applyFilter(); }
   });
 
   /* ---------- init ---------- */
