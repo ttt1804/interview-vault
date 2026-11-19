@@ -10,7 +10,7 @@ Thư mục này lưu quy trình và hồ sơ kiểm tra độ chính xác của 
 | `kafka` | 101 | Đã rà soát và sửa ngày 2026-11-18, chưa chạy broker | 81 điểm, commit `d70938b` | [kafka/](kafka/review.md) |
 | `aws` | 100 | Chưa rà soát | | |
 | `redis` | 100 | Chưa rà soát | | |
-| `sql` | 100 | Chưa rà soát | | |
+| `sql` | 100 | Đã rà soát và sửa ngày 2026-11-19 | 74 điểm, commit `e1109b8` | [sql/](sql/review.md) |
 | `microservices` | 101 | Chưa rà soát | | |
 | `design-patterns` | 100 | Chưa rà soát | | |
 
