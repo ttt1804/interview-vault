@@ -187,7 +187,8 @@ SS.addQuestions('sql', [
         "--   Quy tắc: luôn phải có ít nhất 1 bác sĩ trực. Đang có 2 người.\n" +
         "--   T1 (bác sĩ A): thấy 2 người trực -> xin nghỉ -> OK\n" +
         "--   T2 (bác sĩ B): thấy 2 người trực -> xin nghỉ -> OK\n" +
-        "--   Kết quả: 0 người trực. CHỈ SERIALIZABLE mới chặn được anomaly này.",
+        "--   Kết quả: 0 người trực. SERIALIZABLE tự phát hiện được; ở mức thấp hơn phải\n" +
+        "--   khoá đúng dữ liệu liên quan, ví dụ SELECT ... FOR UPDATE các hàng đang trực.",
     },
   ],
 },
@@ -312,7 +313,7 @@ SS.addQuestions('sql', [
   essence:
     '`FOR UPDATE` biến "đọc" thành "đọc và giữ chỗ để ghi" — cách chính để làm pessimistic locking. `SKIP LOCKED` là chìa khoá cho hàng đợi job trong SQL.',
   example:
-    'Trừ tồn kho: `SELECT qty FROM stock WHERE sku = ? FOR UPDATE` → kiểm tra đủ → `UPDATE stock SET qty = qty - ?`. Không có `FOR UPDATE`, hai request đọc cùng qty=5, cùng trừ 3 → qty = 2 thay vì -1 (oversell).',
+    'Trừ tồn kho: `SELECT qty FROM stock WHERE sku = ? FOR UPDATE` → kiểm tra đủ → `UPDATE stock SET qty = qty - ?`. Không có `FOR UPDATE`, hai request cùng đọc qty=5, cùng thấy đủ rồi cùng trừ 3 → qty = -1 (oversell). Có khoá thì request sau đọc qty=2 và bị từ chối.',
   viz: {
     type: 'compare',
     cols: ['FOR UPDATE', 'FOR SHARE'],
@@ -403,10 +404,10 @@ SS.addQuestions('sql', [
         "\n" +
         "-- PHÒNG TRÁNH:\n" +
         "-- 1) THỨ TỰ KHOÁ NHẤT QUÁN — cách hiệu quả nhất. Luôn khoá theo id tăng dần:\n" +
-        "UPDATE accounts SET balance = balance + CASE id WHEN 1 THEN -100 ELSE 100 END\n" +
-        "WHERE id IN (1, 2);                 -- một câu lệnh, DB tự khoá theo thứ tự\n" +
-        "-- Hoặc trong ứng dụng: sắp xếp id trước khi khoá.\n" +
         "SELECT * FROM accounts WHERE id IN (1, 2) ORDER BY id FOR UPDATE;\n" +
+        "UPDATE accounts SET balance = balance + CASE id WHEN 1 THEN -100 ELSE 100 END\n" +
+        "WHERE id IN (1, 2);\n" +
+        "-- Một câu UPDATE không bảo đảm thứ tự khoá: hai plan khác nhau vẫn có thể deadlock.\n" +
         "\n" +
         "-- 2) TRANSACTION NGẮN: giữ khoá càng lâu, xác suất deadlock càng cao.\n" +
         "-- 3) Giảm isolation level nếu nghiệp vụ cho phép.\n" +
@@ -720,8 +721,8 @@ SS.addQuestions('sql', [
         "--  3) Tỉ lệ huỷ tăng theo mức độ tranh chấp.\n" +
         "SHOW max_pred_locks_per_transaction;\n" +
         "\n" +
-        "-- TỐI ƯU: khai báo transaction chỉ đọc -> SSI bỏ qua theo dõi, gần như\n" +
-        "-- không tốn gì:\n" +
+        "-- TỐI ƯU cho báo cáo dài: có thể chờ lúc bắt đầu để lấy snapshot an toàn,\n" +
+        "-- sau đó chạy mà không bị huỷ vì xung đột serialization:\n" +
         "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE;\n" +
         "\n" +
         "-- KHI NÀO DÙNG: logic nghiệp vụ có ràng buộc phức tạp giữa nhiều hàng\n" +
@@ -777,7 +778,8 @@ SS.addQuestions('sql', [
         "-- false -> instance khác đang chạy -> bỏ qua lần này.\n" +
         "\n" +
         "-- 2) Khoá theo thực thể mà không cần khoá hàng (tránh chặn truy vấn khác)\n" +
-        "SELECT pg_advisory_xact_lock(hashtext(\u0027order\u0027), order_id);   -- khoá hai phần\n" +
+        "SELECT pg_advisory_xact_lock(hashtext(\u0027order:\u0027 || order_id));   -- một khoá từ chuỗi\n" +
+        "-- Dạng hai khoá nhận (int, int), nên order_id BIGINT không truyền thẳng được.\n" +
         "\n" +
         "-- 3) Chống chạy migration đồng thời từ nhiều pod khi khởi động.\n" +
         "\n" +
@@ -864,7 +866,7 @@ SS.addQuestions('sql', [
     'COMMIT;\n' +
     '```\n' +
     'Cách 2 — **UPDATE có điều kiện nguyên tử**: `UPDATE accounts SET balance = balance - :amount WHERE id = :from AND balance >= :amount` → nếu 0 hàng thì không đủ tiền, rollback.\n\n' +
-    'Kèm: `ORDER BY id` để tránh deadlock; idempotency key cho request; ghi vào bảng `transactions` (audit).',
+    'Cách 2 vẫn có thể deadlock khi hai giao dịch chuyển ngược chiều, nên cần khoá theo thứ tự id hoặc retry. Kèm: idempotency key cho request; ghi vào bảng `transactions` (audit).',
   essence:
     'Nguyên tử hoá phép "kiểm tra rồi trừ": hoặc khoá hàng (`FOR UPDATE` theo thứ tự id), hoặc đưa điều kiện vào chính câu `UPDATE`. Luôn khoá theo thứ tự cố định và có idempotency.',
   example:
@@ -884,15 +886,16 @@ SS.addQuestions('sql', [
       lang: "sql",
       title: "Bài toán kinh điển, làm đúng từng bước",
       code:
-        "-- CÁCH 1 (tốt nhất): cập nhật NGUYÊN TỬ, không cần đọc trước\n" +
+        "-- CÁCH 1 (gọn): kiểm tra số dư ngay trong UPDATE, không cần đọc trước\n" +
         "BEGIN;\n" +
         "  UPDATE accounts SET balance = balance - 100\n" +
         "  WHERE id = 1 AND balance >= 100;               -- điều kiện nằm TRONG câu lệnh\n" +
         "  -- Kiểm tra số dòng ảnh hưởng: 0 -> không đủ tiền -> ROLLBACK\n" +
         "  UPDATE accounts SET balance = balance + 100 WHERE id = 2;\n" +
         "COMMIT;\n" +
-        "-- Không có race condition vì DB tự khoá hàng khi UPDATE, và điều kiện\n" +
-        "-- được đánh giá trên giá trị mới nhất.\n" +
+        "-- Không thể trừ quá số dư: DB khoá hàng khi UPDATE và đánh giá lại điều kiện\n" +
+        "-- trên giá trị mới nhất. Nhưng 1->2 và 2->1 chạy cùng lúc vẫn có thể DEADLOCK\n" +
+        "-- -> cập nhật theo thứ tự id cố định hoặc retry 40P01.\n" +
         "\n" +
         "-- CÁCH 2: khoá bi quan khi cần tính toán phức tạp ở ứng dụng\n" +
         "BEGIN;\n" +
@@ -955,9 +958,10 @@ SS.addQuestions('sql', [
       code:
         "// Ở SERIALIZABLE hoặc REPEATABLE READ (Postgres), xung đột là chuyện BÌNH\n" +
         "// THƯỜNG, không phải bug. Ứng dụng BẮT BUỘC phải retry.\n" +
+        "// Spring 6+ dịch 40001 thành CannotAcquireLockException; 40P01 thuộc nhóm\n" +
+        "// PessimisticLockingFailureException. Hai class cũ đã deprecated từ 6.0.3.\n" +
         "@Retryable(\n" +
-        "    retryFor = { CannotSerializeTransactionException.class,   // SQLSTATE 40001\n" +
-        "                 DeadlockLoserDataAccessException.class },    // SQLSTATE 40P01\n" +
+        "    retryFor = ConcurrencyFailureException.class,\n" +
         "    maxAttempts = 3,\n" +
         "    backoff = @Backoff(delay = 50, multiplier = 2, random = true))  // có jitter\n" +
         "@Transactional(isolation = Isolation.SERIALIZABLE)\n" +
@@ -975,7 +979,8 @@ SS.addQuestions('sql', [
         "// BỐN NGUYÊN TẮC:\n" +
         "// 1) RETRY PHẢI BAO TRỌN CẢ TRANSACTION — mở transaction MỚI mỗi lần thử.\n" +
         "//    Retry bên trong transaction đã hỏng là vô nghĩa (Postgres đã abort nó).\n" +
-        "//    -> Đặt @Retryable Ở NGOÀI @Transactional, đúng như thứ tự trên.\n" +
+        "//    -> @Retryable phải bọc NGOÀI @Transactional. Điều này do thứ tự advice quyết\n" +
+        "//       định (mặc định của @EnableRetry là vậy), không do annotation viết trước.\n" +
         "// 2) CÓ JITTER: nhiều client cùng retry đúng lúc -> lại đụng nhau.\n" +
         "// 3) GIỚI HẠN số lần thử và có nhánh xử lý thất bại cuối cùng.\n" +
         "// 4) CHỈ retry lỗi TẠM THỜI. Vi phạm ràng buộc (23505 unique violation)\n" +
@@ -1178,11 +1183,13 @@ SS.addQuestions('sql', [
         "COMMIT;\n" +
         "\n" +
         "-- Gộp cả hai bước bằng CTE (một lần round-trip):\n" +
-        "UPDATE jobs SET status = \u0027PROCESSING\u0027, locked_at = now()\n" +
-        "WHERE id IN (\n" +
+        "WITH picked AS (\n" +
         "  SELECT id FROM jobs WHERE status = \u0027PENDING\u0027 AND run_after <= now()\n" +
         "  ORDER BY run_after LIMIT 10 FOR UPDATE SKIP LOCKED\n" +
-        ") RETURNING id, payload;\n" +
+        ")\n" +
+        "UPDATE jobs j SET status = \u0027PROCESSING\u0027, locked_at = now(), attempts = attempts + 1\n" +
+        "FROM picked WHERE j.id = picked.id\n" +
+        "RETURNING j.id, j.payload;\n" +
         "\n" +
         "-- THU HỒI việc treo (worker chết giữa chừng):\n" +
         "UPDATE jobs SET status = \u0027PENDING\u0027\n" +
@@ -1201,7 +1208,7 @@ SS.addQuestions('sql', [
   q: 'VACUUM và transaction ID wraparound trong Postgres là gì?',
   answer:
     'Postgres đánh dấu version nào hiển thị bằng **transaction id (XID)** 32-bit. XID quay vòng (wraparound) sau ~4 tỉ transaction. Nếu không "đóng băng" (freeze) các hàng cũ kịp thời, dữ liệu quá cũ có thể bị coi là "tương lai" → **mất dữ liệu / DB dừng để tự bảo vệ**.\n\n' +
-    '**VACUUM** (thường tự động — autovacuum): dọn dead tuple (do UPDATE/DELETE + MVCC), cập nhật visibility map, và **FREEZE** các hàng cũ (gán XID đặc biệt "luôn hiển thị").\n\n' +
+    '**VACUUM** (thường tự động — autovacuum): dọn dead tuple (do UPDATE/DELETE + MVCC), cập nhật visibility map, và **FREEZE** các hàng cũ (đánh dấu đã đóng băng, luôn hiển thị).\n\n' +
     'Transaction dài và autovacuum bị tụt hậu là nguyên nhân chính gây nguy cơ wraparound.',
   essence:
     'MVCC của Postgres tạo "rác" (dead tuple) và dùng XID hữu hạn → VACUUM là bắt buộc, không phải tuỳ chọn: nó vừa dọn rác vừa chống wraparound. Theo dõi `age(datfrozenxid)`.',
@@ -1222,7 +1229,7 @@ SS.addQuestions('sql', [
       title: "Dọn dead tuple và một sự cố có thể làm dừng database",
       code:
         "-- MVCC để lại DEAD TUPLE sau mỗi UPDATE/DELETE. VACUUM dọn chúng.\n" +
-        "VACUUM orders;                    -- dọn, KHÔNG khoá bảng, KHÔNG trả đĩa về OS\n" +
+        "VACUUM orders;                    -- dọn, không chặn đọc/ghi, thường không trả đĩa về OS\n" +
         "VACUUM ANALYZE orders;            -- dọn + cập nhật statistics\n" +
         "VACUUM FULL orders;               -- viết lại bảng, TRẢ đĩa về OS,\n" +
         "                                  -- nhưng KHOÁ ACCESS EXCLUSIVE -> chỉ làm\n" +
@@ -1237,8 +1244,9 @@ SS.addQuestions('sql', [
         "-- Để ngăn điều đó, VACUUM \"đóng băng\" (freeze) các hàng đủ cũ.\n" +
         "SELECT datname, age(datfrozenxid) AS tuoi FROM pg_database ORDER BY 2 DESC;\n" +
         "-- autovacuum_freeze_max_age mặc định 200 triệu -> autovacuum khẩn cấp chạy.\n" +
-        "-- Tới ~1 tỉ: Postgres CẢNH BÁO liên tục.\n" +
-        "-- Tới ~2 tỉ: Postgres TỪ CHỐI MỌI GHI để tự bảo vệ -> database dừng hoạt động.\n" +
+        "-- Tuổi 1,6 tỉ: VACUUM vào chế độ failsafe (vacuum_failsafe_age, PG14+).\n" +
+        "-- Còn 40 triệu XID tới wraparound: Postgres CẢNH BÁO liên tục.\n" +
+        "-- Còn 3 triệu XID: TỪ CHỐI cấp XID mới -> các lệnh ghi dừng để tự bảo vệ.\n" +
         "\n" +
         "-- NGUYÊN NHÂN GỐC thường là: transaction chạy lâu, replication slot bị bỏ\n" +
         "-- quên, hoặc prepared transaction treo — tất cả đều CHẶN việc freeze.\n" +

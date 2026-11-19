@@ -101,7 +101,7 @@
         reset: function () { lit([]); },
         steps: [
           { label: 'Bắt đầu ở nút gốc (root)', run: function () { lit(['n-root']); } },
-          { label: '42 ≤ 50 → đi nhánh trái, tới nút [20 | 40]', run: function () { lit(['n-root', 'n-b1'], ['e0', 'e2']); } },
+          { label: '42 ≤ 50 → đi nhánh trái, tới nút [20 | 40]', run: function () { lit(['n-root', 'n-b1'], ['e0']); } },
           { label: '42 > 40 → đi tới lá [41…50]', run: function () { lit(['n-b1', 'n-l2'], ['e3']); } },
           { label: 'Quét trong lá, thấy khoá 42 → lấy con trỏ tới hàng', run: function () { lit(['n-l2'], []); } },
           { label: 'Đọc hàng dữ liệu từ heap — tổng cộng ~4 lần đọc, O(log n)', run: function () { lit(['n-l2', 'n-row'], ['e-row']); } },
@@ -112,7 +112,7 @@
 
   /* ---------- MVCC / snapshot isolation ---------- */
   D.define('mvcc-snapshot', {
-    title: 'MVCC: mỗi transaction đọc từ ảnh chụp (snapshot) riêng',
+    title: 'MVCC ở REPEATABLE READ: transaction đọc từ một snapshot cố định',
     build: function (api) {
       var svg = S('svg', { viewBox: '0 0 640 300', class: 'dg-svg' });
       // timeline
@@ -151,7 +151,7 @@
       return {
         reset: function () { set({ v2: false, a: '', b: '' }); },
         steps: [
-          { label: 'Chỉ có version v1 (x = 100). Transaction A bắt đầu, chụp snapshot.', run: function () { set({ v2: false, a: 'snapshot: x = 100', b: '' }); } },
+          { label: 'Chỉ có version v1 (x = 100). Câu lệnh đầu của transaction A chụp snapshot.', run: function () { set({ v2: false, a: 'snapshot: x = 100', b: '' }); } },
           { label: 'Transaction B chạy UPDATE x = 150 → tạo version v2, rồi COMMIT.', run: function () { set({ v2: true, a: 'snapshot: x = 100', b: 'B ghi & commit v2' }); } },
           { label: 'A đọc x → vẫn thấy v1 = 100 (theo snapshot của A). Đọc không bị chặn bởi ghi.', run: function () { set({ v2: true, a: 'A đọc x = 100  ✓ nhất quán', aStale: true, b: '' }); } },
           { label: 'A commit. Từ giờ, transaction/statement mới đọc x sẽ thấy v2 = 150. v1 chờ VACUUM dọn.', run: function () { set({ v2: true, a: 'A xong', b: 'statement mới đọc x = 150' }); } },

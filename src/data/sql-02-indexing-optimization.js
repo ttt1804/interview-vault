@@ -9,7 +9,7 @@ SS.addQuestions('sql', [
     'Được dùng cho:\n' +
     '- Bằng: `WHERE x = ?`.\n' +
     '- Khoảng: `WHERE x BETWEEN a AND b`, `x > ?`, `x < ?`.\n' +
-    '- Prefix chuỗi: `WHERE name LIKE \'abc%\'`.\n' +
+    '- Prefix chuỗi: `WHERE name LIKE \'abc%\'` (Postgres cần collation `C` hoặc `text_pattern_ops`).\n' +
     '- `ORDER BY x` (đọc lá theo thứ tự, tránh sort).\n' +
     '- `MIN(x)` / `MAX(x)`.\n\n' +
     'Không giúp: `LIKE \'%abc\'`, `WHERE func(x) = ?`, điều kiện có `OR` giữa các cột không cùng index.',
@@ -31,7 +31,7 @@ SS.addQuestions('sql', [
         "SELECT * FROM orders WHERE created_at = \u00272026-09-05\u0027;                 -- bằng\n" +
         "SELECT * FROM orders WHERE created_at BETWEEN \u00272026-09-01\u0027 AND \u00272026-09-05\u0027;  -- khoảng\n" +
         "SELECT * FROM orders WHERE created_at > \u00272026-09-01\u0027 ORDER BY created_at;     -- sắp xếp\n" +
-        "SELECT * FROM orders WHERE customer_name LIKE \u0027Nguyen%\u0027;              -- tiền tố\n" +
+        "SELECT * FROM orders WHERE customer_name LIKE \u0027Nguyen%\u0027;  -- tiền tố, cần index phù hợp\n" +
         "SELECT MIN(created_at), MAX(created_at) FROM orders;                  -- cực trị\n" +
         "SELECT * FROM orders WHERE created_at IS NULL;                        -- Postgres index cả NULL\n" +
         "\n" +
@@ -118,18 +118,18 @@ SS.addQuestions('sql', [
     '- `WHERE a = ? AND b = ?` ✓\n' +
     '- `WHERE a = ? AND b = ? AND c = ?` ✓\n' +
     '- `WHERE a = ? AND c = ?` → chỉ dùng được phần `a` (bỏ qua `c`).\n' +
-    '- `WHERE b = ?` → **không** dùng được index (thiếu `a`).\n\n' +
+    '- `WHERE b = ?` → không tra thẳng được vì thiếu `a`; Postgres 18 và MySQL có thể dùng **skip scan** nếu `a` có ít giá trị.\n\n' +
     'Cột dùng cho **khoảng** nên đặt **sau cùng** trong các cột được so bằng: `(a, b)` với `a =` và `b >` là tốt; đảo lại thì phần sau khoảng vô dụng.',
   essence:
-    'Composite index như từ điển sắp theo (họ, tên): tra được "họ", "họ + tên", nhưng không tra được "tên" đơn lẻ. Thứ tự cột = cột lọc-bằng trước, cột khoảng/sort sau.',
+    'Composite index như từ điển sắp theo (họ, tên): tra nhanh "họ", "họ + tên"; tìm "tên" đơn lẻ thì phải duyệt theo từng họ. Thứ tự cột = cột lọc-bằng trước, cột khoảng/sort sau.',
   example:
     'Query hay chạy: `WHERE tenant_id = ? AND status = ? ORDER BY created_at DESC`. Index tốt: `(tenant_id, status, created_at)` — lọc bằng hai cột đầu, cột thứ ba cho ORDER BY khỏi sort. Index `(created_at, tenant_id, status)` gần như vô dụng cho query này.',
   viz: {
     type: 'flow',
     title: 'Composite index (a, b, c) — quy tắc "leftmost prefix"',
-    nodes: ['sắp theo a, rồi b, rồi c', 'WHERE a = ? ✓', 'WHERE a = ? AND b = ? ✓', 'WHERE b = ? ✗ (thiếu a)', 'WHERE a = ? AND c = ? → chỉ dùng phần a'],
+    nodes: ['sắp theo a, rồi b, rồi c', 'WHERE a = ? ✓', 'WHERE a = ? AND b = ? ✓', 'WHERE b = ? → thiếu a: chỉ skip scan khi a ít giá trị', 'WHERE a = ? AND c = ? → chỉ dùng phần a'],
     steps: [
-      { to: 1, label: 'như từ điển sắp theo (họ, tên): tra "họ", "họ + tên", không tra được "tên" đơn lẻ' },
+      { to: 1, label: 'như từ điển sắp theo (họ, tên): tra nhanh "họ", "họ + tên"; "tên" đơn lẻ phải duyệt từng họ' },
       { to: 3, label: 'thứ tự cột = cột lọc-BẰNG trước, cột khoảng/sort SAU' },
       { to: 4, label: '(tenant_id, status, created_at) cho WHERE tenant= AND status= ORDER BY created_at — không cần sort' },
     ],
@@ -147,17 +147,17 @@ SS.addQuestions('sql', [
         "SELECT * FROM orders WHERE customer_id = 1 AND status = \u0027PAID\u0027 AND created_at > \u00272026-01-01\u0027;\n" +
         "SELECT * FROM orders WHERE customer_id = 1 ORDER BY status, created_at;   -- cả sắp xếp\n" +
         "\n" +
-        "-- KHÔNG DÙNG ĐƯỢC (bỏ qua cột đầu):\n" +
+        "-- THIẾU CỘT ĐẦU: không tra thẳng được. Postgres 18 và MySQL có thể skip scan\n" +
+        "-- nếu customer_id có ít giá trị; ở đây cột đó nhiều giá trị nên thường không đáng.\n" +
         "SELECT * FROM orders WHERE status = \u0027PAID\u0027;                    -- thiếu customer_id\n" +
         "SELECT * FROM orders WHERE created_at > \u00272026-01-01\u0027;          -- thiếu hai cột đầu\n" +
         "\n" +
-        "-- DÙNG MỘT PHẦN: cột KHOẢNG chặn việc dùng các cột SAU nó\n" +
+        "-- THỨ TỰ VIẾT TRONG WHERE KHÔNG QUAN TRỌNG:\n" +
         "SELECT * FROM orders\n" +
         "WHERE customer_id = 1 AND created_at > \u00272026-01-01\u0027 AND status = \u0027PAID\u0027;\n" +
-        "-- Index dùng được customer_id (=) rồi tới created_at (khoảng), nhưng\n" +
-        "-- status nằm SAU created_at trong index nên chỉ được lọc lại, không dùng\n" +
-        "-- để định vị. -> Với truy vấn này, thứ tự (customer_id, status, created_at)\n" +
-        "-- vẫn tốt hơn vì status là điều kiện BẰNG.\n" +
+        "-- Cả ba điều kiện đều vào Index Cond của (customer_id, status, created_at).\n" +
+        "-- Nếu index là (customer_id, created_at, status), cột KHOẢNG created_at đứng\n" +
+        "-- trước nên status không còn giúp thu hẹp liên tục vùng quét.\n" +
         "\n" +
         "-- QUY TẮC THIẾT KẾ:\n" +
         "--  1) cột điều kiện BẰNG (=) đặt TRƯỚC\n" +
@@ -278,9 +278,9 @@ SS.addQuestions('sql', [
         "\n" +
         "-- 5) KHÔNG KHỚP TIỀN TỐ TRÁI của composite index\n" +
         "\n" +
-        "-- 6) CỘT CHỌN LỌC KÉM: status chỉ có 3 giá trị và \u0027NEW\u0027 chiếm 60% bảng\n" +
-        "--    -> index vô dụng. Cân nhắc PARTIAL INDEX:\n" +
-        "CREATE INDEX idx_orders_new ON orders (created_at) WHERE status = \u0027NEW\u0027;\n" +
+        "-- 6) CỘT CHỌN LỌC KÉM: \u0027NEW\u0027 chiếm 60% bảng -> index trên status vô ích cho\n" +
+        "--    giá trị này. Nếu thường tìm giá trị HIẾM, dùng PARTIAL INDEX:\n" +
+        "CREATE INDEX idx_orders_failed ON orders (created_at) WHERE status = \u0027FAILED\u0027;\n" +
         "\n" +
         "-- 7) OR giữa các cột khác nhau -> xem câu về OR\n" +
         "\n" +
@@ -392,20 +392,20 @@ SS.addQuestions('sql', [
       code:
         "-- NESTED LOOP: với mỗi hàng bảng ngoài, tra bảng trong.\n" +
         "--   Chi phí ~ N * chi phí tra cứu. NHANH khi bảng ngoài NHỎ và bảng trong\n" +
-        "--   có INDEX trên cột join. Là lựa chọn duy nhất cho join không phải \"=\".\n" +
+        "--   có INDEX trên cột join. Trong Postgres là lựa chọn duy nhất cho join không phải \"=\".\n" +
         "EXPLAIN SELECT * FROM orders o JOIN customers c ON c.id = o.customer_id\n" +
         "WHERE o.id = 123;                    -- 1 hàng ngoài -> nested loop hoàn hảo\n" +
         "\n" +
         "-- HASH JOIN: dựng bảng băm từ bảng NHỎ HƠN, quét bảng lớn và dò.\n" +
         "--   Chi phí ~ N + M. TỐT NHẤT khi join hai bảng LỚN, không cần index.\n" +
-        "--   Chỉ dùng được cho điều kiện BẰNG (=).\n" +
+        "--   Postgres chỉ dùng cho điều kiện BẰNG (=); MySQL có thể hash rồi lọc bất đẳng thức.\n" +
         "EXPLAIN SELECT * FROM orders o JOIN customers c ON c.id = o.customer_id;\n" +
         "SHOW work_mem;    -- bảng băm không vừa work_mem -> tràn ra ĐĨA -> chậm hẳn\n" +
         "SET work_mem = \u002764MB\u0027;\n" +
         "\n" +
         "-- MERGE JOIN: sắp xếp cả hai bên rồi quét song song như trộn hai danh sách.\n" +
         "--   Tốt khi dữ liệu ĐÃ sắp xếp sẵn (có index phù hợp) hoặc kết quả cần\n" +
-        "--   sắp xếp sau đó. Xử lý được cả bất đẳng thức.\n" +
+        "--   sắp xếp sau đó. Trong Postgres cũng chỉ dùng cho điều kiện BẰNG.\n" +
         "\n" +
         "-- OPTIMIZER TỰ CHỌN dựa trên ước lượng SỐ HÀNG và statistics.\n" +
         "-- Chọn SAI gần như luôn bắt nguồn từ ƯỚC LƯỢNG SAI, không phải từ thuật toán.\n" +
@@ -439,7 +439,7 @@ SS.addQuestions('sql', [
   viz: {
     type: 'flow',
     title: 'Predicate "sargable" — cột đứng một mình một vế',
-    nodes: ['index xây trên GIÁ TRỊ CỘT, không phải f(cột)', 'WHERE YEAR(created_at) = 2024 → bọc hàm → phá index', 'viết lại: created_at >= "2024-01-01" AND < "2025-01-01"', 'hoặc: functional index CREATE INDEX ON t (YEAR(created_at))'],
+    nodes: ['index xây trên GIÁ TRỊ CỘT, không phải f(cột)', 'WHERE YEAR(created_at) = 2024 → bọc hàm → phá index', 'viết lại: created_at >= "2024-01-01" AND < "2025-01-01"', 'hoặc MySQL: CREATE INDEX i ON t ((YEAR(created_at)))'],
     steps: [
       { to: 1, label: 'cũng phá: price * 1.1 > 100, CAST(id AS text) = ?, LIKE "%abc%"' },
       { to: 3, label: 'đưa hàm/biểu thức về vế hằng, hoặc index chính biểu thức đó' },
@@ -470,9 +470,10 @@ SS.addQuestions('sql', [
         "CREATE INDEX idx_users_email_lower ON users (LOWER(email));\n" +
         "SELECT * FROM users WHERE LOWER(email) = \u0027a@x.com\u0027;         -- giờ dùng được index\n" +
         "\n" +
-        "-- Hoặc GENERATED COLUMN (MySQL, Postgres 12+):\n" +
+        "-- Hoặc GENERATED COLUMN (Postgres 12+). created_at::date của timestamptz phụ\n" +
+        "-- thuộc TimeZone nên bị từ chối; phải chốt múi giờ:\n" +
         "ALTER TABLE orders ADD COLUMN created_date DATE\n" +
-        "  GENERATED ALWAYS AS (created_at::date) STORED;\n" +
+        "  GENERATED ALWAYS AS ((created_at AT TIME ZONE \u0027UTC\u0027)::date) STORED;\n" +
         "CREATE INDEX idx_orders_date ON orders (created_date);\n" +
         "\n" +
         "-- Tìm chuỗi ở GIỮA -> B-tree bó tay, dùng trigram index:\n" +
@@ -644,10 +645,10 @@ SS.addQuestions('sql', [
         "WHERE idx_scan = 0 AND indexrelname NOT LIKE \u0027%_pkey\u0027\n" +
         "ORDER BY pg_relation_size(indexrelid) DESC;\n" +
         "-- idx_scan = 0 sau vài tuần chạy production -> ứng viên để xoá.\n" +
-        "-- Lưu ý: thống kê này reset khi restart, và index phục vụ ràng buộc UNIQUE\n" +
-        "-- thì không xoá được.\n" +
+        "-- Lưu ý: restart sạch vẫn giữ thống kê, nhưng crash hoặc pg_stat_reset sẽ xoá.\n" +
+        "-- Index phục vụ ràng buộc UNIQUE thì không xoá được.\n" +
         "\n" +
-        "-- TÌM INDEX TRÙNG LẶP: (a) là thừa nếu đã có (a, b)\n" +
+        "-- TÌM INDEX TRÙNG HỆT (không bắt được trường hợp (a) và (a, b)):\n" +
         "SELECT indrelid::regclass, array_agg(indexrelid::regclass)\n" +
         "FROM pg_index GROUP BY indrelid, indkey HAVING COUNT(*) > 1;\n" +
         "\n" +
@@ -655,9 +656,10 @@ SS.addQuestions('sql', [
         "SELECT pg_size_pretty(pg_relation_size(\u0027orders\u0027)) AS bang,\n" +
         "       pg_size_pretty(pg_indexes_size(\u0027orders\u0027)) AS index;\n" +
         "\n" +
-        "-- Xoá an toàn: đánh dấu vô hiệu trước, quan sát, rồi mới xoá hẳn\n" +
-        "BEGIN; UPDATE pg_index SET indisvalid = false WHERE indexrelid = \u0027idx_x\u0027::regclass; COMMIT;\n" +
-        "DROP INDEX CONCURRENTLY idx_x;      -- CONCURRENTLY: không khoá bảng",
+        "-- Xoá an toàn: lưu định nghĩa để tạo lại được, đừng sửa tay catalog pg_index\n" +
+        "SELECT pg_get_indexdef(\u0027idx_x\u0027::regclass);\n" +
+        "DROP INDEX CONCURRENTLY idx_x;      -- không chặn đọc/ghi như DROP INDEX thường\n" +
+        "-- MySQL có thể thử trước: ALTER TABLE t ALTER INDEX idx_x INVISIBLE;",
     },
   ],
 },
@@ -666,7 +668,7 @@ SS.addQuestions('sql', [
   id: 'sql-1ml92h2',
   q: 'Tìm kiếm chuỗi: `LIKE \'abc%\'` vs `\'%abc%\'` — index nào giúp?',
   answer:
-    '- `LIKE \'abc%\'` (prefix): B-tree index trên cột **dùng được** (là một range scan).\n' +
+    '- `LIKE \'abc%\'` (prefix): B-tree **dùng được** (range scan); Postgres cần collation `C` hoặc `text_pattern_ops`.\n' +
     '- `LIKE \'%abc%\'` hoặc `\'%abc\'` (infix/suffix): B-tree **vô dụng** → seq scan.\n\n' +
     'Cho infix search:\n' +
     '- **Postgres**: `pg_trgm` extension + **GIN index** trên `gin_trgm_ops` → `LIKE \'%abc%\'` và `ILIKE` dùng được index.\n' +
@@ -680,7 +682,7 @@ SS.addQuestions('sql', [
     type: 'compare',
     cols: ["LIKE 'abc%' (prefix)", "LIKE '%abc%' (infix/suffix)"],
     rows: [
-      ['B-tree index trên cột', 'DÙNG được (range scan)', 'VÔ DỤNG → seq scan'],
+      ['B-tree index trên cột', 'DÙNG được (Postgres: collation C hoặc text_pattern_ops)', 'VÔ DỤNG → seq scan'],
       ['Giải pháp', '—', 'Postgres: pg_trgm + GIN index (gin_trgm_ops)'],
       ['Cho nhu cầu nghiêm túc', '—', 'full-text (tsvector + GIN) hoặc search engine (Elasticsearch)'],
     ],
@@ -692,18 +694,18 @@ SS.addQuestions('sql', [
       code:
         "-- TIỀN TỐ CỐ ĐỊNH -> B-tree dùng được (quét theo khoảng)\n" +
         "CREATE INDEX idx_users_name ON users (name);\n" +
-        "SELECT * FROM users WHERE name LIKE \u0027Nguyen%\u0027;        -- dùng index\n" +
+        "SELECT * FROM users WHERE name LIKE \u0027Nguyen%\u0027;        -- collation C: dùng index\n" +
         "\n" +
         "-- KÝ TỰ ĐẠI DIỆN Ở ĐẦU -> B-tree bó tay, phải quét toàn bảng\n" +
         "SELECT * FROM users WHERE name LIKE \u0027%Nguyen%\u0027;       -- Seq Scan\n" +
         "SELECT * FROM users WHERE name LIKE \u0027%Nguyen\u0027;        -- Seq Scan\n" +
         "\n" +
-        "-- LƯU Ý về COLLATION (Postgres): index B-tree thường dùng collation\n" +
-        "-- của locale nên KHÔNG hỗ trợ LIKE tiền tố. Cần index với text_pattern_ops:\n" +
+        "-- LƯU Ý về COLLATION (Postgres): với locale như en_US, index mặc định KHÔNG\n" +
+        "-- hỗ trợ LIKE tiền tố và plan vẫn là Seq Scan. Cần text_pattern_ops:\n" +
         "CREATE INDEX idx_users_name_pattern ON users (name text_pattern_ops);\n" +
         "\n" +
         "-- TÌM KIẾM KHÔNG PHÂN BIỆT HOA THƯỜNG:\n" +
-        "CREATE INDEX idx_users_name_lower ON users (LOWER(name));\n" +
+        "CREATE INDEX idx_users_name_lower ON users (LOWER(name) text_pattern_ops);\n" +
         "SELECT * FROM users WHERE LOWER(name) LIKE \u0027nguyen%\u0027;\n" +
         "\n" +
         "-- TÌM CHUỖI Ở GIỮA -> TRIGRAM INDEX\n" +
@@ -726,7 +728,7 @@ SS.addQuestions('sql', [
   id: 'sql-1mcgf0r',
   q: 'Truy vấn với `OR` — vì sao chậm và viết lại thế nào?',
   answer:
-    '`WHERE a = 1 OR b = 2` — nếu `a` và `b` ở hai index khác nhau, DB thường không thể dùng một index cho cả hai vế → seq scan (hoặc bitmap OR nếu hỗ trợ).\n\n' +
+    '`WHERE a = 1 OR b = 2` — nếu `a` và `b` ở hai index khác nhau, một index không trả lời được cả hai vế. DB phải kết hợp hai index (`BitmapOr`, MySQL `index_merge`) hoặc seq scan.\n\n' +
     'Viết lại:\n' +
     '- **`UNION`** hai truy vấn, mỗi cái dùng một index: `SELECT ... WHERE a = 1 UNION SELECT ... WHERE b = 2`.\n' +
     '- Postgres: **bitmap index scan** có thể OR nhiều index (kiểm tra EXPLAIN).\n' +
@@ -734,11 +736,11 @@ SS.addQuestions('sql', [
   essence:
     '`OR` giữa các cột khác nhau chia truy vấn thành hai bài toán index riêng. `UNION` (hoặc `UNION ALL` + dedup) cho phép mỗi nhánh dùng index tối ưu của nó.',
   example:
-    '`WHERE email = ? OR phone = ?` (login bằng email hoặc phone) → seq scan. Viết lại: `SELECT * FROM users WHERE email = :x UNION SELECT * FROM users WHERE phone = :x` → mỗi nhánh dùng index tương ứng, nhanh.',
+    '`WHERE email = ? OR phone = ?` (login bằng email hoặc phone): Postgres thường dùng `BitmapOr`, MySQL có `index_merge`. Nếu `EXPLAIN` vẫn ra plan tệ thì viết lại: `SELECT * FROM users WHERE email = :x UNION SELECT * FROM users WHERE phone = :x` → mỗi nhánh dùng index tương ứng, nhanh.',
   viz: {
     type: 'flow',
     title: 'OR giữa các cột khác nhau',
-    nodes: ['WHERE a = 1 OR b = 2 (a, b ở hai index khác nhau)', 'DB không dùng một index cho cả hai vế → seq scan', 'viết lại: SELECT ... WHERE a = 1 UNION SELECT ... WHERE b = 2', 'mỗi nhánh dùng index tối ưu của nó'],
+    nodes: ['WHERE a = 1 OR b = 2 (a, b ở hai index khác nhau)', 'một index không đủ → kết hợp hai index hoặc seq scan', 'viết lại: SELECT ... WHERE a = 1 UNION SELECT ... WHERE b = 2', 'mỗi nhánh dùng index tối ưu của nó'],
     steps: [
       { to: 1, label: 'Postgres: bitmap index scan có thể OR nhiều index — kiểm tra EXPLAIN' },
       { to: 3, label: 'OR trên CÙNG một cột → IN (...) (dùng index tốt)' },
@@ -747,14 +749,14 @@ SS.addQuestions('sql', [
   demo: [
     {
       lang: "sql",
-      title: "OR giữa các cột khác nhau làm optimizer bó tay",
+      title: "OR giữa các cột khác nhau cần kết hợp index",
       code:
-        "-- Có index riêng trên email và phone, nhưng câu này thường vẫn Seq Scan:\n" +
+        "-- Có index riêng trên email và phone:\n" +
         "SELECT * FROM users WHERE email = \u0027a@x.com\u0027 OR phone = \u00270901234567\u0027;\n" +
-        "-- Lý do: một lần quét index chỉ trả lời được MỘT vế. DB phải hoặc quét\n" +
-        "-- toàn bảng, hoặc dùng bitmap kết hợp (không phải lúc nào cũng chọn).\n" +
+        "-- Một lần quét index chỉ trả lời được MỘT vế. Điều kiện đủ chọn lọc thì DB kết\n" +
+        "-- hợp hai index (Postgres: BitmapOr, MySQL: index_merge); nếu không thì quét bảng.\n" +
         "\n" +
-        "-- VIẾT LẠI 1: UNION ALL — mỗi vế dùng đúng index của nó\n" +
+        "-- VIẾT LẠI 1: UNION — mỗi vế dùng đúng index của nó\n" +
         "SELECT * FROM users WHERE email = \u0027a@x.com\u0027\n" +
         "UNION\n" +
         "SELECT * FROM users WHERE phone = \u00270901234567\u0027;\n" +
@@ -789,12 +791,12 @@ SS.addQuestions('sql', [
   q: 'Index bloat và fillfactor là gì?',
   answer:
     '**Bloat**: theo thời gian, `UPDATE`/`DELETE` để lại "khoảng trống" trong index (Postgres: dead tuple; nói chung: page nửa rỗng) → index to hơn dữ liệu thực cần → chậm hơn, tốn cache.\n\n' +
-    '**Fillfactor**: % page được điền khi tạo index/bảng (mặc định ~90). Đặt thấp hơn (70) để chừa chỗ cho `UPDATE` tại chỗ (HOT update trong Postgres) → giảm page split và bloat cho bảng update nhiều.\n\n' +
+    '**Fillfactor**: % page được điền (Postgres mặc định: B-tree 90, bảng 100). Đặt fillfactor của **bảng** thấp hơn (70) để chừa chỗ cho HOT update, với điều kiện cột bị đổi không nằm trong index nào.\n\n' +
     'Khắc phục bloat: `REINDEX` (Postgres `REINDEX CONCURRENTLY`), `OPTIMIZE TABLE` (MySQL), rebuild index (SQL Server). autovacuum tuning.',
   essence:
     'Index không "tự dọn" hoàn hảo — update/delete tạo bloat làm nó phình dần. Fillfactor thấp giảm bloat cho workload update; REINDEX định kỳ cho index nóng.',
   example:
-    'Bảng `sessions` update `last_seen` liên tục: index `(last_seen)` phình gấp 3 lần sau vài tuần → query chậm dần. `REINDEX CONCURRENTLY` + đặt `fillfactor = 70` cho bảng → HOT updates, bloat chậm lại.',
+    'Bảng `sessions` update `last_seen` liên tục: index `(last_seen)` phình gấp 3 lần sau vài tuần → query chậm dần. `REINDEX CONCURRENTLY` làm index gọn lại, nhưng `last_seen` có index nên update này không thể là HOT; muốn dùng HOT phải bỏ index đó hoặc đổi cách truy vấn.',
   viz: {
     type: 'tree',
     title: 'Index bloat + fillfactor — index không "tự dọn" hoàn hảo',
@@ -802,7 +804,7 @@ SS.addQuestions('sql', [
       label: 'UPDATE/DELETE để lại khoảng trống → index to hơn dữ liệu thực cần',
       children: [
         { label: 'Bloat', note: 'Postgres: dead tuple; page nửa rỗng → chậm hơn, tốn cache' },
-        { label: 'Fillfactor', note: '% page điền khi tạo (mặc định ~90); đặt 70 → chừa chỗ cho UPDATE tại chỗ (HOT) → giảm page split' },
+        { label: 'Fillfactor', note: 'Postgres mặc định: B-tree 90, bảng 100; bảng 70 → chừa chỗ cho HOT nếu cột đổi không có index' },
         { label: 'Khắc phục', note: 'REINDEX CONCURRENTLY (Postgres), OPTIMIZE TABLE (MySQL); autovacuum tuning' },
       ],
     },
@@ -831,7 +833,9 @@ SS.addQuestions('sql', [
         "-- FILLFACTOR — chừa chỗ trống trong mỗi trang để cập nhật tại chỗ\n" +
         "ALTER TABLE orders SET (fillfactor = 85);           -- mặc định 100\n" +
         "ALTER INDEX idx_orders_created SET (fillfactor = 80);  -- index mặc định 90\n" +
-        "REINDEX TABLE orders;                                -- áp dụng ngay\n" +
+        "REINDEX INDEX CONCURRENTLY idx_orders_created;       -- áp dụng cho index\n" +
+        "-- Fillfactor của bảng chỉ tác động lên trang ghi về sau; muốn áp cho dữ liệu cũ\n" +
+        "-- phải viết lại bảng (VACUUM FULL, pg_repack).\n" +
         "-- Chỗ trống cho phép HOT update (heap-only tuple): phiên bản mới nằm CÙNG\n" +
         "-- TRANG với bản cũ -> KHÔNG phải cập nhật index -> giảm bloat rất nhiều.\n" +
         "-- Điều kiện HOT: cột được cập nhật KHÔNG nằm trong index nào.\n" +
@@ -1042,7 +1046,7 @@ SS.addQuestions('sql', [
     'Thường **ít ích** khi dùng đơn lẻ: nếu `status = \'active\'` khớp 90% bảng → optimizer bỏ index, seq scan.\n\n' +
     'Nhưng có ích khi:\n' +
     '- Giá trị hiếm cần lọc nhanh: `WHERE status = \'ERROR\'` (0.1%) → **partial index** `WHERE status = \'ERROR\'`.\n' +
-    '- Là **cột đầu** của composite index cho các query luôn lọc bằng nó: `(tenant_id, status, created_at)`.\n' +
+    '- Là **một cột bằng** trong composite index: `(tenant_id, status, created_at)` cho query lọc `tenant_id` và `status`.\n' +
     '- Kết hợp với cột khác trong index để tăng selectivity tổng.',
   essence:
     'Selectivity của một predicate mới là yếu tố quyết định, không phải cardinality của cột. Cột cardinality thấp phát huy khi lọc giá trị hiếm (partial index) hoặc làm thành phần của composite index.',
@@ -1055,7 +1059,7 @@ SS.addQuestions('sql', [
       label: 'Dùng đơn lẻ thường ít ích (status = "active" 90% → seq scan)',
       children: [
         { label: 'Giá trị hiếm cần lọc nhanh', note: 'WHERE status = "ERROR" (0.1%) → PARTIAL INDEX WHERE status = "ERROR"' },
-        { label: 'Cột ĐẦU của composite index', note: '(tenant_id, status, created_at) cho query luôn lọc bằng nó' },
+        { label: 'Cột BẰNG trong composite index', note: '(tenant_id, status, created_at) cho query lọc tenant_id và status' },
         { label: 'Kết hợp cột khác trong index để tăng selectivity tổng' },
       ],
     },
@@ -1164,7 +1168,7 @@ SS.addQuestions('sql', [
   answer:
     'Index trên **kết quả một biểu thức** thay vì cột thô:\n' +
     '- Postgres: `CREATE INDEX ON users (lower(email))`, `CREATE INDEX ON events ((data->>\'type\'))`.\n' +
-    '- MySQL 8: `CREATE INDEX ON t ((JSON_EXTRACT(doc, \'$.k\')))` hoặc index trên **generated column** (`col AS (...) STORED/VIRTUAL`).\n' +
+    '- MySQL 8+: `CREATE INDEX i ON t ((CAST(doc->>\'$.k\' AS CHAR(64)) COLLATE utf8mb4_bin))` hoặc index trên **generated column** (`col AS (...) STORED/VIRTUAL`). Không index trực tiếp được giá trị JSON từ `JSON_EXTRACT`.\n' +
     '- SQL Server: index trên computed column (cần `PERSISTED` cho một số trường hợp).\n\n' +
     'Truy vấn phải dùng **đúng biểu thức** đó thì mới khớp index.',
   essence:
@@ -1191,7 +1195,8 @@ SS.addQuestions('sql', [
         "-- Điều kiện: biểu thức trong truy vấn phải KHỚP CHÍNH XÁC với biểu thức\n" +
         "-- trong index, và hàm phải IMMUTABLE (cùng input luôn cho cùng output).\n" +
         "\n" +
-        "CREATE INDEX idx_orders_year ON orders (EXTRACT(YEAR FROM created_at));\n" +
+        "CREATE INDEX idx_orders_year ON orders (EXTRACT(YEAR FROM created_at AT TIME ZONE \u0027UTC\u0027));\n" +
+        "-- Truy vấn cũng phải viết đúng biểu thức có AT TIME ZONE \u0027UTC\u0027 này.\n" +
         "CREATE INDEX idx_users_fullname ON users ((first_name || \u0027 \u0027 || last_name));\n" +
         "CREATE INDEX idx_events_data_type ON events ((data->>\u0027type\u0027));   -- JSONB\n" +
         "\n" +
@@ -1199,12 +1204,12 @@ SS.addQuestions('sql', [
         "-- Dễ đọc hơn expression index, và dùng được ở MySQL (nơi không có\n" +
         "-- expression index cho tới 8.0).\n" +
         "ALTER TABLE orders ADD COLUMN created_date DATE\n" +
-        "  GENERATED ALWAYS AS (created_at::date) STORED;\n" +
+        "  GENERATED ALWAYS AS ((created_at AT TIME ZONE \u0027UTC\u0027)::date) STORED;\n" +
         "CREATE INDEX idx_orders_created_date ON orders (created_date);\n" +
         "SELECT * FROM orders WHERE created_date = \u00272026-09-05\u0027;\n" +
         "\n" +
-        "-- STORED (lưu trên đĩa, index được) vs VIRTUAL (tính lúc đọc, MySQL có,\n" +
-        "-- Postgres chưa hỗ trợ VIRTUAL).\n" +
+        "-- STORED (lưu trên đĩa, index được) vs VIRTUAL (tính lúc đọc). Postgres 18 có\n" +
+        "-- VIRTUAL nhưng chưa cho tạo index trên cột này.\n" +
         "\n" +
         "-- SO SÁNH:\n" +
         "--  Expression index — không tốn thêm cột, nhưng truy vấn phải viết ĐÚNG\n" +

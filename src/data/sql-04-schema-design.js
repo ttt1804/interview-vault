@@ -205,7 +205,7 @@ SS.addQuestions('sql', [
   q: 'Chọn kiểu dữ liệu: int vs bigint, varchar vs text, tiền tệ, timestamp?',
   answer:
     '- **Số nguyên**: `int` (±2.1 tỉ) đủ cho hầu hết đếm; nhưng **PK/FK dùng `bigint`** (một bảng "chỉ vài triệu" hôm nay có thể tràn int sau vài năm — migrate PK là ác mộng).\n' +
-    '- **Chuỗi**: Postgres `text` = `varchar` về hiệu năng; đặt `varchar(n)` chỉ khi thật sự cần giới hạn nghiệp vụ. MySYQL: `varchar` (in-row) vs `text` (có thể off-page).\n' +
+    '- **Chuỗi**: Postgres `text` = `varchar` về hiệu năng; đặt `varchar(n)` chỉ khi thật sự cần giới hạn nghiệp vụ. MySQL: `varchar` (in-row) vs `text` (có thể off-page).\n' +
     '- **Tiền tệ**: `numeric`/`decimal(19,4)` — **không bao giờ `float`/`double`** (0.1 + 0.2 ≠ 0.3). Hoặc lưu số nguyên nhỏ nhất (cents).\n' +
     '- **Thời gian**: `timestamptz` (Postgres) lưu UTC; tránh `timestamp` không tz. `date` cho ngày thuần.',
   essence:
@@ -238,7 +238,6 @@ SS.addQuestions('sql', [
         "  -- TIỀN BẠC: LUÔN dùng NUMERIC/DECIMAL. FLOAT/DOUBLE là nhị phân,\n" +
         "  -- không biểu diễn chính xác 0.1 -> sai số tích luỹ.\n" +
         "  -- Hoặc lưu số nguyên đơn vị nhỏ nhất (đồng, cent) trong BIGINT.\n" +
-        "  SELECT 0.1::float + 0.2::float = 0.3::float;   -- false!\n" +
         "\n" +
         "  status      TEXT NOT NULL,\n" +
         "  -- Postgres: TEXT và VARCHAR(n) LƯU GIỐNG HỆT nhau, không khác hiệu năng.\n" +
@@ -252,6 +251,7 @@ SS.addQuestions('sql', [
         "  metadata    JSONB,               -- JSONB (nhị phân, index được), không JSON\n" +
         "  tags        TEXT[]               -- mảng: tiện, nhưng cân nhắc bảng riêng\n" +
         ");\n" +
+        "SELECT 0.1::float + 0.2::float = 0.3::float;   -- false!\n" +
         "\n" +
         "-- Kích thước quan trọng hơn tưởng: hàng nhỏ -> nhiều hàng trên một trang\n" +
         "-- -> ít I/O -> nhanh hơn. Thứ tự cột cũng ảnh hưởng (Postgres căn lề):\n" +
@@ -372,7 +372,7 @@ SS.addQuestions('sql', [
         "SELECT * FROM users WHERE deleted_at IS NULL;\n" +
         "-- -> Dùng VIEW để không phải nhớ:\n" +
         "CREATE VIEW active_users AS SELECT * FROM users WHERE deleted_at IS NULL;\n" +
-        "-- Hoặc Row Level Security, hoặc @Where của Hibernate.\n" +
+        "-- Hoặc Row Level Security, hoặc @SQLRestriction của Hibernate 6.3+.\n" +
         "\n" +
         "-- 2) UNIQUE constraint VỠ: xoá user email a@x.com rồi đăng ký lại -> trùng\n" +
         "CREATE UNIQUE INDEX uq_users_email_active ON users (email)\n" +
@@ -400,7 +400,7 @@ SS.addQuestions('sql', [
   id: 'sql-fiux41',
   q: 'Lưu enum: cột enum, lookup table, hay check constraint?',
   answer:
-    '- **Native ENUM** (Postgres `CREATE TYPE`, MySQL `ENUM`): gọn, ràng buộc chặt, nhưng **thêm/xoá giá trị cần ALTER** (MySQL rebuild bảng; Postgres `ADD VALUE` không xoá được), không lưu metadata (label, thứ tự, active).\n' +
+    '- **Native ENUM** (Postgres `CREATE TYPE`, MySQL `ENUM`): gọn, ràng buộc chặt, nhưng **đổi tập giá trị cần ALTER** (MySQL thêm vào cuối có thể `INSTANT`, đổi thứ tự thì rebuild; Postgres có `ADD VALUE`, `RENAME VALUE` nhưng không xoá được), không lưu metadata (label, thứ tự, active).\n' +
     '- **CHECK constraint** trên `varchar`: `CHECK (status IN (\'DRAFT\', \'PUBLISHED\', \'ARCHIVED\'))` — linh hoạt hơn ENUM, dễ đọc, nhưng đổi vẫn cần ALTER constraint.\n' +
     '- **Lookup table** + FK: `statuses(code, label, sort_order, is_active)`. Thêm giá trị = INSERT (không ALTER), lưu được metadata, join để hiển thị. Nhược: thêm một JOIN.',
   essence:
@@ -412,7 +412,7 @@ SS.addQuestions('sql', [
     corner: 'Tiêu chí',
     cols: ['Native ENUM', 'CHECK constraint', 'Lookup table + FK'],
     rows: [
-      ['Thêm / xoá giá trị', 'ALTER (MySQL rebuild; PG không xoá được)', 'ALTER constraint', 'INSERT — không ALTER'],
+      ['Thêm / xoá giá trị', 'ALTER (MySQL thêm cuối INSTANT; PG không xoá được)', 'ALTER constraint', 'INSERT — không ALTER'],
       ['Lưu metadata (label, thứ tự, active)', 'không', 'không', 'có'],
       ['Chi phí đọc', 'không JOIN', 'không JOIN', 'thêm một JOIN'],
       ['Hợp với', 'tập cố định (giới tính)', 'tập ít đổi, cần dễ đọc', 'tập mở rộng, cần quản trị'],
@@ -440,7 +440,7 @@ SS.addQuestions('sql', [
         "CREATE TABLE orders (id BIGSERIAL PRIMARY KEY, status order_status NOT NULL);\n" +
         "ALTER TYPE order_status ADD VALUE \u0027REFUNDED\u0027;       -- chỉ THÊM được\n" +
         "-- + tiết kiệm (4 byte), có THỨ TỰ tự nhiên để sắp xếp\n" +
-        "-- - XOÁ hoặc ĐỔI TÊN giá trị rất khó (phải tạo type mới và chuyển cột)\n" +
+        "-- - ĐỔI TÊN được bằng RENAME VALUE, nhưng XOÁ giá trị thì phải tạo type mới\n" +
         "-- - ADD VALUE không chạy được trong transaction ở Postgres cũ\n" +
         "\n" +
         "-- CÁCH 3: LOOKUP TABLE — linh hoạt nhất\n" +
@@ -873,11 +873,13 @@ SS.addQuestions('sql', [
         "-- LỢI ÍCH:\n" +
         "-- 1) PARTITION PRUNING: truy vấn có điều kiện trên khoá phân vùng chỉ quét\n" +
         "--    đúng phân vùng liên quan.\n" +
-        "EXPLAIN SELECT * FROM events WHERE created_at >= \u00272026-09-01\u0027;   -- chỉ 1 partition\n" +
+        "EXPLAIN SELECT * FROM events\n" +
+        "WHERE created_at >= \u00272026-09-01\u0027 AND created_at < \u00272026-10-01\u0027;   -- chỉ 1 partition\n" +
         "\n" +
         "-- 2) XOÁ DỮ LIỆU CŨ TỨC THÌ — đây thường là lý do chính:\n" +
         "DROP TABLE events_2025_09;                        -- tức thì\n" +
-        "ALTER TABLE events DETACH PARTITION events_2025_09;\n" +
+        "-- Hoặc tách ra trước nếu còn muốn lưu trữ:\n" +
+        "-- ALTER TABLE events DETACH PARTITION events_2025_09;\n" +
         "-- so với DELETE hàng trăm triệu dòng (hàng giờ, bloat, WAL khổng lồ).\n" +
         "\n" +
         "-- 3) VACUUM/REINDEX từng phần -> bảo trì khả thi trên bảng rất lớn.\n" +
@@ -928,14 +930,16 @@ SS.addQuestions('sql', [
         "  amount NUMERIC(18,2) NOT NULL\n" +
         ");\n" +
         "CREATE INDEX idx_orders_tenant ON orders (tenant_id, id);\n" +
-        "-- tenant_id phải là cột ĐẦU TIÊN của MỌI index — nếu không, mọi truy vấn\n" +
-        "-- đều quét dữ liệu của tenant khác.\n" +
+        "-- Index phục vụ truy vấn theo tenant nên bắt đầu bằng tenant_id, để không\n" +
+        "-- phải duyệt qua dữ liệu của tenant khác.\n" +
         "\n" +
         "-- Bảo vệ bằng ROW LEVEL SECURITY để không phụ thuộc vào việc code nhớ WHERE:\n" +
         "ALTER TABLE orders ENABLE ROW LEVEL SECURITY;\n" +
+        "ALTER TABLE orders FORCE ROW LEVEL SECURITY;   -- không có dòng này, CHỦ BẢNG bỏ qua policy\n" +
         "CREATE POLICY tenant_isolation ON orders\n" +
         "  USING (tenant_id = current_setting(\u0027app.tenant_id\u0027)::bigint);\n" +
-        "SET app.tenant_id = \u002742\u0027;        -- đặt ở đầu mỗi request\n" +
+        "BEGIN; SET LOCAL app.tenant_id = \u002742\u0027;   -- theo transaction, an toàn với pool\n" +
+        "-- App không được chạy bằng superuser hoặc role có BYPASSRLS.\n" +
         "-- + rẻ nhất, dễ vận hành, migration một lần cho tất cả\n" +
         "-- - RỦI RO RÒ RỈ DỮ LIỆU nếu quên lọc; tenant lớn ảnh hưởng tenant nhỏ\n" +
         "--   (\"noisy neighbour\"); khó backup/khôi phục riêng một tenant\n" +
@@ -972,7 +976,7 @@ SS.addQuestions('sql', [
   essence:
     'Index bắt buộc lúc design: PK, tất cả FK, unique nghiệp vụ. Index cho pattern query đã biết. Index đầu cơ thì để lại — over-indexing đánh thuế mọi lần ghi.',
   example:
-    'Tạo `orders (id PK, customer_id FK, status, created_at)`: ngay lập tức thêm `INDEX (customer_id)` (FK), `INDEX (customer_id, created_at DESC)` (query "đơn của tôi mới nhất"), `INDEX (status, created_at) WHERE status = \'PENDING\'` (job xử lý đơn chờ).',
+    'Tạo `orders (id PK, customer_id FK, status, created_at)`: ngay lập tức thêm `INDEX (customer_id, created_at DESC)` (vừa phục vụ FK vừa phục vụ query "đơn của tôi mới nhất"), `INDEX (created_at) WHERE status = \'PENDING\'` (job xử lý đơn chờ).',
   viz: {
     type: 'tree',
     title: 'Index bắt buộc lúc design vs index đầu cơ để lại',
@@ -996,15 +1000,15 @@ SS.addQuestions('sql', [
         "-- TẠO NGAY TỪ ĐẦU (gần như luôn cần):\n" +
         "CREATE TABLE orders (\n" +
         "  id BIGSERIAL PRIMARY KEY,                  -- index tự động\n" +
+        "  order_number TEXT NOT NULL,\n" +
         "  customer_id BIGINT NOT NULL REFERENCES customers(id),\n" +
         "  status TEXT NOT NULL,\n" +
         "  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n" +
         ");\n" +
         "-- 1) MỌI cột khoá ngoại — Postgres KHÔNG tự tạo index cho FK.\n" +
         "--    Thiếu nó: xoá hàng cha phải quét toàn bộ bảng con, và dễ deadlock.\n" +
-        "CREATE INDEX idx_orders_customer ON orders (customer_id);\n" +
-        "\n" +
-        "-- 2) Cột dùng để LỌC + SẮP XẾP trong truy vấn chính của màn hình\n" +
+        "-- 2) Cột dùng để LỌC + SẮP XẾP trong truy vấn chính của màn hình.\n" +
+        "--    Index dưới đây phục vụ cả hai vì customer_id đứng đầu:\n" +
         "CREATE INDEX idx_orders_customer_created ON orders (customer_id, created_at DESC);\n" +
         "\n" +
         "-- 3) Ràng buộc nghiệp vụ duy nhất\n" +
@@ -1081,7 +1085,7 @@ SS.addQuestions('sql', [
         "ALTER TABLE orders VALIDATE CONSTRAINT chk;\n" +
         "\n" +
         "-- CÁC THAO TÁC NGUY HIỂM (viết lại cả bảng hoặc khoá lâu):\n" +
-        "-- ALTER TABLE ... ALTER COLUMN TYPE          -> viết lại toàn bảng\n" +
+        "-- ALTER TABLE ... ALTER COLUMN TYPE          -> thường viết lại toàn bảng\n" +
         "-- ALTER TABLE ... SET NOT NULL               -> quét toàn bảng (12+ dùng được\n" +
         "--                                               CHECK NOT VALID rồi chuyển)\n" +
         "-- CREATE INDEX (không CONCURRENTLY)          -> khoá ghi\n" +
@@ -1089,7 +1093,7 @@ SS.addQuestions('sql', [
         "\n" +
         "-- LUÔN đặt timeout khi chạy migration ở production:\n" +
         "SET lock_timeout = \u00273s\u0027;\n" +
-        "SET statement_timeout = \u002730s\u0027;\n" +
+        "SET statement_timeout = \u002730s\u0027;   -- nới riêng cho CREATE INDEX CONCURRENTLY, VALIDATE\n" +
         "-- Thiếu lock_timeout: DDL chờ khoá, và MỌI truy vấn tới sau xếp hàng\n" +
         "-- phía sau nó -> bảng bị khoá cứng dù DDL chưa chạy dòng nào.",
     },
@@ -1224,11 +1228,11 @@ SS.addQuestions('sql', [
         "-- 1) TRÁNH TỪ KHOÁ SQL: order, user, group, table, from -> orders, users, user_groups\n" +
         "--    (nếu không sẽ phải bọc dấu nháy kép ở khắp nơi)\n" +
         "-- 2) KHÔNG viết tắt khó hiểu: cust_nm -> customer_name\n" +
-        "-- 3) KHÔNG nhắc lại tên bảng trong cột: orders.order_date -> orders.order_date\n" +
-        "--    chấp nhận được, nhưng orders.order_id cho khoá chính thì thừa -> id\n" +
+        "-- 3) Tránh lặp tên bảng vô ích: khoá chính orders.order_id -> orders.id.\n" +
+        "--    Tên có nghĩa nghiệp vụ như orders.order_date vẫn chấp nhận được.\n" +
         "-- 4) Postgres tự HẠ CHỮ THƯỜNG mọi định danh không có dấu nháy kép\n" +
         "--    -> đừng bao giờ dùng \"CamelCase\" trong DDL, sẽ phải quote mãi mãi.\n" +
-        "-- 5) Giới hạn 63 ký tự (Postgres) — tên index dài bị cắt âm thầm.",
+        "-- 5) Giới hạn 63 byte (Postgres) — tên dài bị cắt, chỉ kèm NOTICE.",
     },
   ],
 },
@@ -1308,13 +1312,13 @@ SS.addQuestions('sql', [
     '- `SELECT *` kéo nhiều dữ liệu không cần.\n' +
     '- Cột nullable/thưa lãng phí.\n' +
     '- Cột `text`/`jsonb` lớn làm mọi hàng nặng (Postgres TOAST giảm bớt; MySQL off-page).\n' +
-    '- Update một cột phải rewrite cả hàng (Postgres MVCC).\n' +
+    '- Update một cột tạo phiên bản hàng mới (Postgres MVCC); giá trị TOAST không đổi được dùng lại.\n' +
     '- Giới hạn số cột (Postgres ~1600).\n\n' +
     '**Tách bảng** (vertical partitioning): nhóm cột "nóng" (hay đọc/ghi) tách khỏi cột "lạnh" (metadata, blob) → hàng nóng nhỏ, cache tốt, ít bloat.',
   essence:
     'Số cột không phải vấn đề tự thân; **dữ liệu lớn/thưa/lạnh trộn với dữ liệu nóng** mới là. Tách cột hiếm dùng và cột nặng sang bảng phụ 1–1 với PK chung.',
   example:
-    '`users` có `bio text`, `preferences jsonb`, `avatar_data bytea` cùng với `email`, `last_login`: mỗi lần update `last_login` (thường xuyên) rewrite cả blob → bloat. Tách `user_profiles (user_id PK, bio, preferences)` và lưu avatar ở object storage.',
+    '`users` có `bio text`, `preferences jsonb`, `avatar_data bytea` cùng với `email`, `last_login`: giá trị lớn đã TOAST không bị ghi lại khi update `last_login`, nhưng các cột nằm trong hàng chính vẫn được chép sang phiên bản mới. Tách cột ít dùng vào `user_profiles (user_id PK, bio, preferences)` và lưu avatar ở object storage giúp hàng nóng gọn, backup và cache cũng dễ hơn.',
   viz: {
     type: 'compare',
     corner: 'Khía cạnh',
@@ -1322,7 +1326,7 @@ SS.addQuestions('sql', [
     rows: [
       ['JOIN', 'ít — lấy hết trong một hàng', 'thêm JOIN cho cột "lạnh"'],
       ['SELECT *', 'kéo nhiều dữ liệu không cần', 'hàng nóng nhỏ, cache tốt'],
-      ['Update một cột', 'rewrite cả hàng (Postgres MVCC) → bloat', 'chỉ rewrite hàng nóng nhỏ'],
+      ['Update một cột', 'tạo phiên bản hàng mới; TOAST không đổi được dùng lại', 'phiên bản mới của hàng nóng nhỏ hơn'],
       ['Cột text/jsonb/blob lớn', 'làm mọi hàng nặng', 'tách sang bảng phụ 1–1 (PK chung)'],
     ],
   },

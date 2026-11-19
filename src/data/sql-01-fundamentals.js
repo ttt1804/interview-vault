@@ -75,7 +75,7 @@ SS.addQuestions('sql', [
   q: 'LEFT JOIN mà đặt điều kiện bảng phải ở `WHERE` vs ở `ON` — khác gì?',
   answer:
     'Điều kiện ở **`ON`**: áp dụng **khi ghép** — hàng bảng trái không khớp vẫn được giữ (với NULL bên phải).\n\n' +
-    'Điều kiện ở **`WHERE`** (trên cột bảng phải): áp dụng **sau khi ghép** — hàng có NULL bên phải bị loại (vì `NULL = x` là false) → LEFT JOIN **biến thành INNER JOIN** một cách âm thầm.',
+    'Điều kiện ở **`WHERE`** (trên cột bảng phải): áp dụng **sau khi ghép** — hàng có NULL bên phải bị loại (vì `NULL = x` cho `UNKNOWN`, mà `WHERE` chỉ giữ hàng `TRUE`) → LEFT JOIN **biến thành INNER JOIN** một cách âm thầm.',
   essence:
     'Với OUTER JOIN, `ON` lọc "cái gì được ghép", `WHERE` lọc "kết quả cuối". Đặt filter bảng phải vào `WHERE` vô tình huỷ tính OUTER.',
   example:
@@ -85,7 +85,7 @@ SS.addQuestions('sql', [
     cols: ['Điều kiện bảng phải ở ON', 'Điều kiện bảng phải ở WHERE'],
     rows: [
       ['Áp dụng', 'KHI GHÉP', 'SAU khi ghép'],
-      ['Hàng bảng trái không khớp', 'vẫn giữ (NULL bên phải)', 'bị loại (NULL = x là false)'],
+      ['Hàng bảng trái không khớp', 'vẫn giữ (NULL bên phải)', 'bị loại (NULL = x là UNKNOWN)'],
       ['Kết quả', 'LEFT JOIN đúng nghĩa', 'LEFT JOIN âm thầm biến thành INNER JOIN'],
     ],
   },
@@ -215,7 +215,7 @@ SS.addQuestions('sql', [
   essence:
     '`WHERE` = "hàng nào tham gia". `HAVING` = "nhóm nào được giữ". Đẩy điều kiện xuống `WHERE` càng nhiều càng tốt cho hiệu năng.',
   example:
-    '"Khách hàng năm 2024 chi tiêu > 10 triệu": `WHERE order_date >= \'2024-01-01\'` (lọc hàng, dùng index date) rồi `GROUP BY customer_id HAVING SUM(amount) > 10000000` (lọc nhóm). Đặt điều kiện date vào HAVING sẽ quét cả bảng.',
+    '"Khách hàng năm 2024 chi tiêu > 10 triệu": `WHERE order_date >= \'2024-01-01\'` (lọc hàng, dùng index date) rồi `GROUP BY customer_id HAVING SUM(amount) > 10000000` (lọc nhóm). `order_date` không nằm trong `GROUP BY` nên không chuyển được sang `HAVING`; thêm nó vào `GROUP BY` lại làm đổi ý nghĩa nhóm.',
   viz: {
     type: 'compare',
     cols: ['WHERE', 'HAVING'],
@@ -264,10 +264,10 @@ SS.addQuestions('sql', [
         "ORDER BY tong DESC;\n" +
         "\n" +
         "-- QUAN TRỌNG VỀ HIỆU NĂNG: đặt được điều kiện ở WHERE thì ĐỪNG đặt ở HAVING.\n" +
-        "-- WHERE giảm số hàng phải gom nhóm; HAVING chỉ vứt bỏ sau khi đã tính xong.\n" +
+        "-- Về logic, WHERE giảm số hàng trước khi gom; HAVING lọc sau khi đã có nhóm.\n" +
         "SELECT customer_id, COUNT(*) FROM orders\n" +
         "GROUP BY customer_id\n" +
-        "HAVING customer_id > 100;             -- SAI CHỖ: gom nhóm cả những cái sẽ bỏ\n" +
+        "HAVING customer_id > 100;             -- KHÓ ĐỌC: Postgres tự đẩy xuống scan, đừng dựa vào đó\n" +
         "\n" +
         "SELECT customer_id, COUNT(*) FROM orders\n" +
         "WHERE customer_id > 100               -- ĐÚNG: lọc trước, gom nhóm ít hơn\n" +
@@ -369,14 +369,14 @@ SS.addQuestions('sql', [
     '- `NULL` trong `UNIQUE`: nhiều NULL thường được cho phép (tuỳ DB).\n\n' +
     'Công cụ: `COALESCE(a, b, ...)`, `NULLIF(a, b)`, `IS DISTINCT FROM`.',
   essence:
-    'NULL nghĩa là "không biết", nên mọi phép toán với nó ra "không biết" → hàng bị loại. Xử lý NULL tường minh (`IS NULL`, `COALESCE`, `IS DISTINCT FROM`) thay vì để nó âm thầm làm sai kết quả.',
+    'NULL nghĩa là "không biết", nên so sánh và phép tính với nó thường ra "không biết"; `WHERE` chỉ giữ hàng `TRUE`. Xử lý NULL tường minh (`IS NULL`, `COALESCE`, `IS DISTINCT FROM`) thay vì để nó âm thầm làm sai kết quả.',
   example:
     '`WHERE status <> \'CANCELLED\'` bỏ sót các hàng `status IS NULL`. Nếu ý bạn là "gồm cả chưa set status": `WHERE status IS DISTINCT FROM \'CANCELLED\'` hoặc `WHERE status <> \'CANCELLED\' OR status IS NULL`.',
   viz: {
     type: 'tree',
     title: 'Logic ba giá trị: TRUE / FALSE / UNKNOWN',
     root: {
-      label: 'NULL = "không biết" → mọi phép toán ra "không biết" → hàng bị loại',
+      label: 'NULL = "không biết" → so sánh ra UNKNOWN → WHERE loại hàng',
       children: [
         { label: 'NULL = NULL → UNKNOWN (không phải TRUE)', note: 'phải dùng IS NULL / IS NOT NULL' },
         { label: 'NULL <> 5 → UNKNOWN → hàng bị loại khỏi WHERE' },
@@ -394,7 +394,8 @@ SS.addQuestions('sql', [
         "-- Mọi so sánh với NULL đều cho UNKNOWN, không phải TRUE/FALSE:\n" +
         "SELECT NULL = NULL;        -- NULL (không phải true!)\n" +
         "SELECT NULL <> 1;          -- NULL\n" +
-        "SELECT NULL + 1;           -- NULL — mọi phép toán với NULL đều ra NULL\n" +
+        "SELECT NULL + 1;           -- NULL — phép tính số học với NULL ra NULL\n" +
+        "SELECT TRUE OR NULL;       -- TRUE — logic ba giá trị không phải lúc nào cũng ra NULL\n" +
         "\n" +
         "-- WHERE chỉ giữ hàng có kết quả TRUE. UNKNOWN bị loại như FALSE.\n" +
         "SELECT * FROM users WHERE phone = NULL;      -- LUÔN rỗng\n" +
@@ -413,7 +414,7 @@ SS.addQuestions('sql', [
         "       AVG(score)          -- trung bình chỉ trên hàng không NULL (mẫu số khác!)\n" +
         "FROM users;\n" +
         "\n" +
-        "-- BẪY 4: UNIQUE cho phép NHIỀU NULL (chuẩn SQL) -> không chống trùng được\n" +
+        "-- BẪY 4: UNIQUE cho phép NHIỀU NULL (Postgres, MySQL; SQL Server chỉ cho một) -> không chống trùng được\n" +
         "--        các hàng chưa có giá trị.\n" +
         "\n" +
         "-- Công cụ xử lý:\n" +
@@ -534,7 +535,7 @@ SS.addQuestions('sql', [
         "-- INTERSECT: chỉ hàng có ở CẢ HAI\n" +
         "SELECT email FROM customers INTERSECT SELECT email FROM subscribers;\n" +
         "\n" +
-        "-- EXCEPT (MySQL: dùng NOT EXISTS thay thế): có ở vế đầu, KHÔNG có ở vế sau\n" +
+        "-- EXCEPT (Oracle truyền thống gọi là MINUS): có ở vế đầu, KHÔNG có ở vế sau\n" +
         "SELECT email FROM customers EXCEPT SELECT email FROM subscribers;\n" +
         "\n" +
         "-- QUY TẮC:\n" +
@@ -559,10 +560,10 @@ SS.addQuestions('sql', [
   answer:
     'Đếm/tổng có điều kiện trong **một** lần quét, thay vì nhiều subquery:\n' +
     '- Chuẩn SQL / mọi DB: `SUM(CASE WHEN status = \'PAID\' THEN amount ELSE 0 END)`, `COUNT(CASE WHEN status = \'PAID\' THEN 1 END)`.\n' +
-    '- Postgres / SQL chuẩn mới: `COUNT(*) FILTER (WHERE status = \'PAID\')`, `SUM(amount) FILTER (WHERE ...)` — sạch hơn.\n\n' +
+    '- Postgres / SQLite (MySQL chưa có): `COUNT(*) FILTER (WHERE status = \'PAID\')`, `SUM(amount) FILTER (WHERE ...)` — sạch hơn.\n\n' +
     'Cho phép "pivot" nhanh: nhiều cột thống kê theo các điều kiện khác nhau trong một hàng kết quả.',
   essence:
-    'Conditional aggregation biến "nhiều truy vấn cho nhiều lát cắt" thành một lần quét bảng với nhiều biểu thức aggregate. `FILTER` là cú pháp đẹp cho việc này (Postgres).',
+    'Conditional aggregation biến "nhiều truy vấn cho nhiều lát cắt" thành một lần quét bảng với nhiều biểu thức aggregate. `FILTER` là cú pháp đẹp cho việc này (Postgres, SQLite).',
   example:
     'Báo cáo theo tháng: `SELECT date_trunc(\'month\', created_at) AS m, COUNT(*) AS total, COUNT(*) FILTER (WHERE status = \'PAID\') AS paid, SUM(amount) FILTER (WHERE status = \'PAID\') AS revenue FROM orders GROUP BY 1`.',
   viz: {
@@ -571,7 +572,7 @@ SS.addQuestions('sql', [
     nodes: ['một lần quét bảng', 'SUM(CASE WHEN status = "PAID" THEN amount ELSE 0 END)', 'hoặc: COUNT(*) FILTER (WHERE status = "PAID") — Postgres', 'nhiều cột thống kê theo điều kiện khác nhau trong một hàng kết quả'],
     steps: [
       { to: 1, label: 'thay vì nhiều subquery cho nhiều điều kiện' },
-      { to: 2, label: 'FILTER là cú pháp sạch hơn CASE (Postgres / SQL chuẩn mới)' },
+      { to: 2, label: 'FILTER là cú pháp sạch hơn CASE (Postgres, SQLite)' },
       { to: 3, label: 'cho phép "pivot" nhanh' },
     ],
   },
@@ -635,23 +636,23 @@ SS.addQuestions('sql', [
   id: 'sql-1f35rr2',
   q: 'Upsert: `INSERT ... ON CONFLICT` / `MERGE` hoạt động thế nào?',
   answer:
-    '"Insert nếu chưa có, update nếu đã có" — nguyên tử ở mức câu lệnh.\n\n' +
+    '"Insert nếu chưa có, update nếu đã có". `ON CONFLICT` và `ON DUPLICATE KEY UPDATE` xử lý được xung đột khi hai phiên cùng ghi.\n\n' +
     '- **Postgres**: `INSERT ... ON CONFLICT (key_cols) DO UPDATE SET col = EXCLUDED.col` (hoặc `DO NOTHING`).\n' +
     '- **MySQL**: `INSERT ... ON DUPLICATE KEY UPDATE ...`.\n' +
-    '- **SQL chuẩn / Oracle / SQL Server**: `MERGE`.\n\n' +
+    '- **SQL chuẩn / Oracle / SQL Server / Postgres 15+**: `MERGE`. Đừng coi đây là upsert an toàn khi chạy đồng thời: Postgres có thể báo lỗi unique nếu hai phiên cùng chèn một khoá, SQL Server cần cân nhắc `HOLDLOCK`.\n\n' +
     'Cần một **unique constraint / primary key** để xác định "xung đột". `EXCLUDED` (Postgres) tham chiếu hàng lẽ ra được insert.',
   essence:
-    'Upsert gộp "kiểm tra tồn tại + insert/update" thành một câu lệnh nguyên tử, tránh race giữa `SELECT` và `INSERT` (hai session cùng thấy "chưa có" rồi cùng insert → lỗi unique).',
+    '`ON CONFLICT` gộp "kiểm tra tồn tại + insert/update" thành một câu lệnh nguyên tử, tránh race giữa `SELECT` và `INSERT` (hai session cùng thấy "chưa có" rồi cùng insert → lỗi unique).',
   example:
     'Counter theo ngày: `INSERT INTO daily_views (day, views) VALUES (CURRENT_DATE, 1) ON CONFLICT (day) DO UPDATE SET views = daily_views.views + 1`. Nghìn request đồng thời vẫn đếm đúng, không cần lock thủ công.',
   viz: {
     type: 'flow',
-    title: 'Upsert (INSERT ... ON CONFLICT / MERGE)',
+    title: 'Upsert bằng INSERT ... ON CONFLICT',
     nodes: ['INSERT ... VALUES (...)', 'ON CONFLICT (key_cols)', 'DO UPDATE SET col = EXCLUDED.col (hoặc DO NOTHING)', 'nguyên tử ở mức câu lệnh'],
     steps: [
       { to: 1, label: 'cần unique constraint / PK để xác định "xung đột"' },
       { to: 3, label: 'tránh race giữa SELECT và INSERT (hai session cùng thấy "chưa có" rồi cùng insert)' },
-      { to: 3, label: 'Postgres: ON CONFLICT + EXCLUDED; MySQL: ON DUPLICATE KEY UPDATE; chuẩn: MERGE' },
+      { to: 3, label: 'Postgres: ON CONFLICT + EXCLUDED; MySQL: ON DUPLICATE KEY UPDATE; MERGE không tự xử lý chèn đồng thời' },
     ],
   },
   demo: [
@@ -666,15 +667,17 @@ SS.addQuestions('sql', [
         "SET name       = EXCLUDED.name,       -- EXCLUDED = hàng ĐỊNH chèn\n" +
         "    price      = EXCLUDED.price,\n" +
         "    updated_at = now()\n" +
-        "WHERE products.price IS DISTINCT FROM EXCLUDED.price;   -- chỉ ghi khi THỰC SỰ đổi\n" +
+        "WHERE (products.name, products.price)\n" +
+        "      IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.price);  -- chỉ ghi khi THỰC SỰ đổi\n" +
         "-- Mệnh đề WHERE này tránh ghi vô ích -> giảm bloat và giảm ghi WAL.\n" +
         "\n" +
         "INSERT INTO products (sku, name) VALUES (\u0027SKU-1\u0027, \u0027Áo\u0027)\n" +
         "ON CONFLICT (sku) DO NOTHING;         -- bỏ qua nếu đã có\n" +
         "\n" +
         "-- MYSQL\n" +
-        "INSERT INTO products (sku, name, price) VALUES (\u0027SKU-1\u0027, \u0027Áo\u0027, 100000)\n" +
-        "ON DUPLICATE KEY UPDATE name = VALUES(name), price = VALUES(price);\n" +
+        "INSERT INTO products (sku, name, price) VALUES (\u0027SKU-1\u0027, \u0027Áo\u0027, 100000) AS new\n" +
+        "ON DUPLICATE KEY UPDATE name = new.name, price = new.price;\n" +
+        "-- Hàm VALUES(cột) trong mệnh đề này đã deprecated.\n" +
         "\n" +
         "-- CHUẨN SQL (Postgres 15+, SQL Server, Oracle)\n" +
         "MERGE INTO products p\n" +
@@ -682,10 +685,12 @@ SS.addQuestions('sql', [
         "ON p.sku = s.sku\n" +
         "WHEN MATCHED THEN UPDATE SET name = s.name, price = s.price\n" +
         "WHEN NOT MATCHED THEN INSERT (sku, name, price) VALUES (s.sku, s.name, s.price);\n" +
+        "-- Postgres: nếu phiên khác vừa chèn cùng sku, MERGE báo lỗi unique chứ không\n" +
+        "-- chuyển sang UPDATE. Cần upsert đồng thời thì dùng ON CONFLICT.\n" +
         "\n" +
         "-- VÌ SAO KHÔNG TỰ LÀM \"SELECT rồi INSERT/UPDATE\": giữa hai lệnh có RACE\n" +
         "-- CONDITION -> hai transaction cùng thấy \"chưa có\" và cùng INSERT -> lỗi\n" +
-        "-- trùng khoá hoặc dữ liệu nhân đôi. Upsert là NGUYÊN TỬ ở mức câu lệnh.\n" +
+        "-- trùng khoá hoặc dữ liệu nhân đôi. ON CONFLICT xử lý xung đột đó ngay trong câu lệnh.\n" +
         "-- ĐIỀU KIỆN: phải có UNIQUE constraint/index trên cột xung đột.",
     },
   ],
@@ -737,8 +742,8 @@ SS.addQuestions('sql', [
         "\n" +
         "-- CÁC HÀNH VI:\n" +
         "--  RESTRICT   — chặn NGAY, không cho xoá (kiểm tra tức thì)\n" +
-        "--  NO ACTION  — chặn, nhưng kiểm tra CUỐI transaction (mặc định chuẩn SQL)\n" +
-        "--               -> cho phép xoá rồi chèn lại trong cùng transaction\n" +
+        "--  NO ACTION  — mặc định. Kiểm tra CUỐI CÂU LỆNH; chỉ hoãn tới cuối transaction\n" +
+        "--               khi constraint là DEFERRABLE và đang ở chế độ deferred\n" +
         "--  CASCADE    — xoá/sửa lan sang bảng con. MẠNH và NGUY HIỂM: một lệnh DELETE\n" +
         "--               có thể xoá hàng triệu dòng ở nhiều bảng.\n" +
         "--  SET NULL   — đặt cột về NULL (cột phải cho phép NULL)\n" +
@@ -857,7 +862,7 @@ SS.addQuestions('sql', [
         "\n" +
         "-- UNIQUE:\n" +
         "--  - có bao nhiêu cũng được\n" +
-        "--  - CHO PHÉP NULL, và theo chuẩn SQL thì NHIỀU NULL đều hợp lệ\n" +
+        "--  - CHO PHÉP NULL; Postgres/MySQL nhận NHIỀU NULL, SQL Server chỉ nhận một\n" +
         "--    (vì NULL <> NULL) -> không chống trùng được các hàng chưa có giá trị\n" +
         "INSERT INTO users (email, username, tenant_id) VALUES (\u0027a@x.com\u0027, NULL, 1);\n" +
         "INSERT INTO users (email, username, tenant_id) VALUES (\u0027b@x.com\u0027, NULL, 1);  -- OK!\n" +
@@ -1015,7 +1020,7 @@ SS.addQuestions('sql', [
   q: 'Ép kiểu ngầm (implicit coercion) gây bug và mất index như thế nào?',
   answer:
     'Khi so sánh hai kiểu khác nhau, DB ép một bên. Hậu quả:\n' +
-    '- **Mất index**: `WHERE phone = 123456` khi `phone` là `varchar` → DB có thể ép **cột** sang số (hoặc ngược lại) → index trên `phone` không dùng được, full scan.\n' +
+    '- **Mất index hoặc lỗi**: `WHERE phone = 123456` khi `phone` là `varchar` → MySQL so sánh theo số nên không dùng được index trên `phone`; Postgres báo lỗi `operator does not exist`.\n' +
     '- **Kết quả sai/lỗi**: so sánh chuỗi `\'10\'` với `\'9\'` theo thứ tự từ điển; `\'2024-13-01\'` ép date lỗi.\n' +
     '- **MySQL** đặc biệt "dễ dãi": `WHERE id = \'5abc\'` có thể khớp `id = 5`.',
   essence:
@@ -1025,7 +1030,7 @@ SS.addQuestions('sql', [
   viz: {
     type: 'flow',
     title: 'Ép kiểu ngầm → mất index',
-    nodes: ['WHERE phone = 123456 (phone là varchar)', 'DB ép CỘT sang số (hoặc ngược lại)', 'index trên phone không dùng được', 'full scan'],
+    nodes: ['WHERE phone = 123456 (phone là varchar)', 'MySQL so sánh theo số; Postgres báo lỗi kiểu', 'MySQL không dùng được index trên phone', 'full scan'],
     steps: [
       { to: 1, label: 'so sánh hai kiểu khác nhau → DB ép một bên' },
       { to: 3, label: 'luôn so sánh cùng kiểu; truyền tham số đúng kiểu' },
@@ -1041,23 +1046,25 @@ SS.addQuestions('sql', [
         "SELECT * FROM users WHERE id = \u0027123\u0027;        -- thường vẫn dùng được index\n" +
         "                                             -- (ép hằng số sang BIGINT)\n" +
         "\n" +
-        "-- Nhưng NGƯỢC LẠI thì hỏng: cột TEXT so với số -> phải ép TỪNG HÀNG\n" +
+        "-- Nhưng NGƯỢC LẠI thì hỏng: cột chuỗi so với số\n" +
         "SELECT * FROM users WHERE phone = 84901234567;\n" +
-        "-- -> DB phải chuyển phone của MỌI HÀNG sang số -> SEQ SCAN, index vô dụng.\n" +
+        "-- MySQL: so sánh theo số trên từng hàng -> full scan, index vô dụng.\n" +
+        "-- Postgres: ERROR operator does not exist: text = bigint.\n" +
         "SELECT * FROM users WHERE phone = \u002784901234567\u0027;   -- đúng kiểu -> dùng index\n" +
         "\n" +
         "-- BUG THỰC SỰ NGUY HIỂM trong MySQL — so sánh chuỗi với số:\n" +
         "--   SELECT * FROM users WHERE code = 0;\n" +
-        "--   MySQL ép mọi chuỗi không phải số thành 0 -> TRẢ VỀ GẦN NHƯ TOÀN BỘ BẢNG.\n" +
-        "--   Đây là một vector tấn công thật (SQL injection kiểu type juggling).\n" +
+        "--   MySQL coi chuỗi không bắt đầu bằng số là 0 -> khớp TẤT CẢ các hàng đó.\n" +
+        "--   Nguy hiểm nếu tham số vô tình đổi từ chuỗi sang số.\n" +
         "\n" +
-        "-- Ép kiểu ngầm khi JOIN hai cột khác kiểu -> mất index trên cả hai\n" +
+        "-- JOIN hai cột khác kiểu cũng vậy\n" +
         "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id;\n" +
-        "-- customer_id là VARCHAR còn c.id là BIGINT -> join cực chậm.\n" +
+        "-- customer_id là VARCHAR còn c.id là BIGINT: Postgres báo lỗi; MySQL so sánh\n" +
+        "-- theo số, không tra được index của cột VARCHAR.\n" +
         "-- -> Thống nhất kiểu dữ liệu giữa các bảng NGAY TỪ THIẾT KẾ.\n" +
         "\n" +
-        "-- Kiểm tra bằng EXPLAIN: thấy cast hoặc \"Seq Scan\" ở chỗ đáng lẽ có index\n" +
-        "EXPLAIN ANALYZE SELECT * FROM users WHERE phone = 84901234567;\n" +
+        "-- Kiểm tra bằng EXPLAIN: thấy cast hoặc quét toàn bảng ở chỗ đáng lẽ có index\n" +
+        "EXPLAIN SELECT * FROM users WHERE phone = 84901234567;   -- MySQL\n" +
         "\n" +
         "-- Trong ứng dụng: dùng PREPARED STATEMENT với tham số đúng kiểu — nó vừa\n" +
         "-- chống SQL injection vừa tránh ép kiểu ngoài ý muốn.",
@@ -1191,7 +1198,7 @@ SS.addQuestions('sql', [
   id: 'sql-hc6xnm',
   q: 'Số học ngày tháng cơ bản (date arithmetic) và múi giờ?',
   answer:
-    '- Trừ hai ngày → khoảng (`interval` trong Postgres, số ngày trong MySQL `DATEDIFF`).\n' +
+    '- Trừ thời gian: Postgres `date - date` ra **số ngày**, `timestamp - timestamp` ra `interval`; MySQL dùng `DATEDIFF`.\n' +
     '- Cộng khoảng: `created_at + INTERVAL \'7 days\'`, `DATE_ADD(d, INTERVAL 1 MONTH)`.\n' +
     '- Cắt/nhóm: `DATE_TRUNC(\'month\', ts)` (Postgres), `DATE_FORMAT` (MySQL).\n' +
     '- **`timestamp` vs `timestamptz`**: `timestamptz` (Postgres) lưu theo UTC, chuyển đổi theo session timezone khi đọc — dùng cái này cho sự kiện thực. `timestamp` (không tz) là "wall clock" mơ hồ.',
@@ -1205,7 +1212,7 @@ SS.addQuestions('sql', [
     root: {
       label: 'Trộn timestamp không tz với nhiều múi giờ = bug kinh niên',
       children: [
-        { label: 'Trừ hai ngày → khoảng', note: 'interval (Postgres) / DATEDIFF (MySQL)' },
+        { label: 'Trừ thời gian', note: 'date - date = số ngày; timestamp - timestamp = interval (Postgres); DATEDIFF (MySQL)' },
         { label: 'Cộng khoảng', note: "created_at + INTERVAL '7 days'" },
         { label: 'Cắt/nhóm', note: "DATE_TRUNC('month', ts) (Postgres) / DATE_FORMAT (MySQL)" },
         { label: 'timestamptz vs timestamp', note: 'timestamptz lưu UTC, chuyển theo session tz — dùng cho sự kiện thực; timestamp là "wall clock" mơ hồ' },
@@ -1260,8 +1267,9 @@ SS.addQuestions('sql', [
   q: '`GROUP BY` semantics: cột nào được phép trong SELECT?',
   answer:
     'Chuẩn SQL: mọi cột trong `SELECT` (không nằm trong aggregate) **phải** xuất hiện trong `GROUP BY` — vì mỗi nhóm chỉ trả một hàng, cột không gom thì "chọn giá trị nào?".\n\n' +
-    '- **Postgres / SQL Server / Oracle**: enforce nghiêm (lỗi nếu vi phạm), nhưng cho phép cột **phụ thuộc hàm** vào PK đã group.\n' +
-    '- **MySQL** (mặc định `ONLY_FULL_GROUP_BY` từ 5.7): cũng enforce; tắt chế độ này cho phép chọn giá trị "bất kỳ" của nhóm → nguồn bug (giá trị không xác định).',
+    '- **Postgres**: báo lỗi nếu vi phạm, nhưng cho phép cột **phụ thuộc hàm** vào PK đã group.\n' +
+    '- **SQL Server**: cột không aggregate phải nằm trong `GROUP BY`.\n' +
+    '- **MySQL** (mặc định `ONLY_FULL_GROUP_BY` từ 5.7): cũng kiểm tra và nhận phụ thuộc hàm; tắt chế độ này cho phép chọn giá trị "bất kỳ" của nhóm → nguồn bug (giá trị không xác định).',
   essence:
     '`GROUP BY` biến nhiều hàng thành một hàng/nhóm — mọi cột không aggregate phải xác định được (nằm trong GROUP BY hoặc phụ thuộc hàm). MySQL với `ONLY_FULL_GROUP_BY` tắt là "bom hẹn giờ".',
   example:
@@ -1269,7 +1277,7 @@ SS.addQuestions('sql', [
   viz: {
     type: 'flow',
     title: 'GROUP BY semantics',
-    nodes: ['GROUP BY biến nhiều hàng → một hàng/nhóm', 'mọi cột không aggregate phải xác định được (trong GROUP BY hoặc phụ thuộc hàm PK)', 'Postgres/SQL Server/Oracle: enforce nghiêm (lỗi nếu vi phạm)', 'MySQL: ONLY_FULL_GROUP_BY (mặc định 5.7+); tắt → chọn giá trị "bất kỳ" của nhóm = bom hẹn giờ'],
+    nodes: ['GROUP BY biến nhiều hàng → một hàng/nhóm', 'mọi cột không aggregate phải xác định được (trong GROUP BY; Postgres/MySQL nhận thêm phụ thuộc hàm vào PK)', 'Postgres/SQL Server: báo lỗi nếu vi phạm', 'MySQL: ONLY_FULL_GROUP_BY (mặc định 5.7+); tắt → chọn giá trị "bất kỳ" của nhóm = bom hẹn giờ'],
     steps: [
       { to: 1, label: 'cột không gom thì "chọn giá trị nào?"' },
       { to: 2, label: 'sửa: thêm vào GROUP BY, dùng MAX(...), hoặc JOIN sau khi aggregate' },
@@ -1291,16 +1299,17 @@ SS.addQuestions('sql', [
         "SELECT customer_id, MAX(status), COUNT(*)\n" +
         "FROM orders GROUP BY customer_id;              -- đúng: dùng aggregate\n" +
         "\n" +
-        "-- PHỤ THUỘC HÀM (Postgres, chuẩn SQL): nếu đã GROUP BY khoá CHÍNH của bảng\n" +
+        "-- PHỤ THUỘC HÀM (Postgres, MySQL): nếu đã GROUP BY khoá CHÍNH của bảng\n" +
         "-- thì mọi cột khác của bảng đó là xác định -> được phép:\n" +
         "SELECT c.id, c.name, c.email, COUNT(o.id)\n" +
         "FROM customers c LEFT JOIN orders o ON o.customer_id = c.id\n" +
         "GROUP BY c.id;                                 -- hợp lệ vì c.id là PRIMARY KEY\n" +
         "\n" +
         "-- MYSQL: mặc định BẬT ONLY_FULL_GROUP_BY từ 5.7. Trước đó nó cho phép chọn\n" +
-        "-- cột bất kỳ và trả về giá trị NGẪU NHIÊN từ nhóm -> nguồn của rất nhiều\n" +
+        "-- cột bất kỳ và trả về giá trị KHÔNG XÁC ĐỊNH từ nhóm -> nguồn của rất nhiều\n" +
         "-- bug âm thầm trong code cũ.\n" +
-        "-- SET sql_mode = \u0027ONLY_FULL_GROUP_BY\u0027;   -- nên giữ BẬT\n" +
+        "-- SELECT @@sql_mode;   -- kiểm tra có ONLY_FULL_GROUP_BY. Đừng SET mỗi giá trị\n" +
+        "--                         này: lệnh đó xoá luôn STRICT_TRANS_TABLES và các mode khác.\n" +
         "\n" +
         "-- GROUP BY theo VỊ TRÍ hoặc theo BIỂU THỨC:\n" +
         "SELECT DATE_TRUNC(\u0027month\u0027, created_at) AS thang, SUM(amount)\n" +

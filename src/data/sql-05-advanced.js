@@ -90,7 +90,7 @@ SS.addQuestions('sql', [
     '- `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` → running total (cộng dồn từ đầu).\n' +
     '- `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW` → tổng/trung bình 7 hàng gần nhất (moving).\n' +
     '- `RANGE` dựa trên **giá trị** `ORDER BY` (các hàng cùng giá trị coi như một), `ROWS` dựa trên **vị trí vật lý**.\n\n' +
-    'Mặc định frame khi có `ORDER BY`: `RANGE UNBOUNDED PRECEDING AND CURRENT ROW` — dễ gây bất ngờ với `LAST_VALUE`.',
+    'Mặc định frame khi có `ORDER BY`: `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` — dễ gây bất ngờ với `LAST_VALUE`.',
   essence:
     'Frame là "cửa sổ trượt" trong partition. `ROWS` cho window theo số hàng cố định (moving average); `UNBOUNDED PRECEDING` cho cộng dồn. Luôn khai báo frame tường minh khi dùng `LAST_VALUE`/`SUM OVER`.',
   example:
@@ -101,9 +101,9 @@ SS.addQuestions('sql', [
     cols: ['ROWS', 'RANGE'],
     rows: [
       ['Cơ sở tính frame', 'vị trí vật lý của hàng', 'giá trị ORDER BY (hàng cùng giá trị coi như một)'],
-      ['Running total', 'ROWS UNBOUNDED PRECEDING AND CURRENT ROW', 'cũng được nhưng cộng cả nhóm cùng giá trị'],
+      ['Running total', 'ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW', 'cũng được nhưng cộng cả nhóm cùng giá trị'],
       ['Moving average N hàng', 'ROWS BETWEEN 6 PRECEDING AND CURRENT ROW', 'không chính xác theo số hàng'],
-      ['Mặc định khi có ORDER BY', '—', 'RANGE UNBOUNDED PRECEDING AND CURRENT ROW (bất ngờ với LAST_VALUE)'],
+      ['Mặc định khi có ORDER BY', '—', 'RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW (bất ngờ với LAST_VALUE)'],
     ],
   },
   demo: [
@@ -145,7 +145,7 @@ SS.addQuestions('sql', [
         "\n" +
         "-- RANGE theo KHOẢNG GIÁ TRỊ (Postgres 11+): trung bình 7 ngày THẬT\n" +
         "-- (đúng cả khi thiếu ngày, khác với \"7 hàng\"):\n" +
-        "SUM(doanh_thu) OVER (ORDER BY ngay RANGE BETWEEN INTERVAL \u00276 days\u0027 PRECEDING AND CURRENT ROW)",
+        "AVG(doanh_thu) OVER (ORDER BY ngay RANGE BETWEEN INTERVAL \u00276 days\u0027 PRECEDING AND CURRENT ROW)",
     },
   ],
 },
@@ -561,8 +561,8 @@ SS.addQuestions('sql', [
         "-- (cùng ý nghĩa, khác từ khoá).\n" +
         "\n" +
         "-- HIỆU NĂNG: LATERAL chạy subquery cho TỪNG hàng bên trái -> bảng trái\n" +
-        "-- phải nhỏ, hoặc subquery phải có index tốt. Cần \"top 1 mỗi nhóm\" trên\n" +
-        "-- bảng lớn thì DISTINCT ON hoặc ROW_NUMBER thường nhanh hơn.",
+        "-- phải nhỏ, hoặc subquery phải có index tốt. Khi số nhóm rất lớn, DISTINCT ON\n" +
+        "-- hoặc ROW_NUMBER có thể rẻ hơn vì chỉ đọc bảng một lượt.",
     },
   ],
 },
@@ -585,7 +585,7 @@ SS.addQuestions('sql', [
     corner: 'Cách',
     cols: ['ROW_NUMBER() = 1', 'DISTINCT ON', 'LATERAL', 'Correlated subquery = max'],
     rows: [
-      ['Portable', 'có', 'Postgres', 'Postgres', 'có'],
+      ['Portable', 'có', 'Postgres', 'Postgres, MySQL', 'có'],
       ['Ngắn gọn', 'trung bình', 'ngắn nhất', 'trung bình', 'dài'],
       ['Hiệu năng', 'tốt', 'tốt', 'tốt khi bảng trái nhỏ', 'chậm'],
       ['Đúng khi trùng max', 'có (chọn 1)', 'có (chọn 1)', 'có (LIMIT 1)', 'sai — ra nhiều hàng'],
@@ -624,13 +624,13 @@ SS.addQuestions('sql', [
         ") t WHERE rn = 1;\n" +
         "-- Rõ ràng, đổi rn <= 3 là ra top 3. Nhưng phải QUÉT VÀ SẮP XẾP toàn bảng.\n" +
         "\n" +
-        "-- CÁCH 2: DISTINCT ON — chỉ Postgres, NGẮN GỌN và thường NHANH NHẤT\n" +
+        "-- CÁCH 2: DISTINCT ON — chỉ Postgres, NGẮN GỌN\n" +
         "SELECT DISTINCT ON (customer_id) *\n" +
         "FROM orders\n" +
         "ORDER BY customer_id, created_at DESC;\n" +
         "-- ORDER BY bắt buộc bắt đầu bằng cột trong DISTINCT ON.\n" +
         "CREATE INDEX idx_orders_cust_created ON orders (customer_id, created_at DESC);\n" +
-        "-- Với index này, Postgres đọc lướt và lấy hàng đầu mỗi nhóm -> rất nhanh.\n" +
+        "-- Index này bỏ được bước sort, nhưng Postgres vẫn đọc mọi hàng của mỗi nhóm.\n" +
         "\n" +
         "-- CÁCH 3: LATERAL — tốt khi bảng \"nhóm\" NHỎ và bảng chi tiết LỚN\n" +
         "SELECT c.id, o.*\n" +
@@ -659,7 +659,7 @@ SS.addQuestions('sql', [
   answer:
     'Khi query lọc theo **khoá partition**, optimizer chỉ quét các partition có thể chứa kết quả, bỏ qua phần còn lại.\n\n' +
     '- Điều kiện phải **sargable trên khoá partition**: `WHERE created_at >= \'2024-06-01\'` → pruning tốt; `WHERE date(created_at) = ...` → có thể phá pruning.\n' +
-    '- **Postgres**: pruning lúc plan (`partition_pruning`) và cả lúc chạy (với tham số động, prepared statement).\n' +
+    '- **Postgres**: pruning lúc plan (`enable_partition_pruning`) và cả lúc chạy (với tham số động, prepared statement).\n' +
     '- Join giữa hai bảng cùng partition scheme → **partition-wise join** (join từng cặp partition).',
   essence:
     'Pruning là lợi ích query lớn nhất của partitioning — nhưng chỉ hoạt động khi predicate lọc trực tiếp trên khoá partition. Bọc hàm quanh khoá partition = quét tất cả.',
@@ -687,7 +687,8 @@ SS.addQuestions('sql', [
         "  FOR VALUES FROM (\u00272026-09-01\u0027) TO (\u00272026-10-01\u0027);\n" +
         "\n" +
         "-- PRUNING HOẠT ĐỘNG: điều kiện trên khoá phân vùng là HẰNG SỐ\n" +
-        "EXPLAIN SELECT * FROM events WHERE created_at >= \u00272026-09-01\u0027;\n" +
+        "EXPLAIN SELECT * FROM events\n" +
+        "WHERE created_at >= \u00272026-09-01\u0027 AND created_at < \u00272026-10-01\u0027;\n" +
         "-- -> chỉ quét events_2026_09, các phân vùng khác bị loại ngay khi lập kế hoạch.\n" +
         "\n" +
         "-- PRUNING KHÔNG HOẠT ĐỘNG:\n" +
@@ -786,7 +787,7 @@ SS.addQuestions('sql', [
     'Route write → primary, read → replica để scale đọc. Vấn đề: replica **trễ** (async) → "read your own write" fail (user cập nhật xong, load lại thấy dữ liệu cũ).\n\n' +
     'Xử lý:\n' +
     '- **Sticky / read-after-write**: sau khi user ghi, route read của user đó về primary trong X giây.\n' +
-    '- **Causal consistency**: primary trả LSN/GTID sau khi ghi; read chờ replica đạt LSN đó (Postgres: `pg_wait_for_lsn`-like ở tầng app; MySQL: `WAIT_FOR_EXECUTED_GTID_SET`).\n' +
+    '- **Causal consistency**: primary trả LSN/GTID sau khi ghi; read chờ replica đạt LSN đó (Postgres 18: ứng dụng poll `pg_last_wal_replay_lsn()`; MySQL: `WAIT_FOR_EXECUTED_GTID_SET`).\n' +
     '- Đọc **không nhạy staleness** (feed, search, report) → replica thoải mái.\n' +
     '- Giám sát lag, rút replica khỏi pool nếu lag vượt ngưỡng.',
   essence:
@@ -827,10 +828,11 @@ SS.addQuestions('sql', [
         "                                    // chuyển sang replica\n" +
         "-- 3) CHỜ ĐỒNG BỘ tới một vị trí LSN cụ thể (chính xác nhất, phức tạp hơn):\n" +
         "SELECT pg_current_wal_lsn();                       -- trên primary sau khi ghi\n" +
-        "SELECT pg_wal_replay_wait(\u00270/16B3748\u0027);            -- trên replica (PG 18+)\n" +
-        "-- 4) SYNCHRONOUS REPLICATION — không còn độ trễ, nhưng GHI CHẬM HẲN\n" +
-        "--    và primary phụ thuộc vào replica:\n" +
-        "--    synchronous_commit = on; synchronous_standby_names = \u0027replica1\u0027\n" +
+        "SELECT pg_last_wal_replay_lsn() >= \u00270/16B3748\u0027::pg_lsn;   -- poll trên replica\n" +
+        "-- 4) SYNCHRONOUS REPLICATION với remote_apply — commit chờ replica áp xong,\n" +
+        "--    nhưng GHI CHẬM HẲN và primary phụ thuộc vào replica:\n" +
+        "--    synchronous_commit = remote_apply; synchronous_standby_names = \u0027replica1\u0027\n" +
+        "--    (giá trị on chỉ chờ WAL bền trên standby, query ở đó có thể vẫn thấy dữ liệu cũ)\n" +
         "\n" +
         "-- CÁC ĐIỂM KHÁC CẦN LƯU Ý:\n" +
         "--  - replica CHỈ ĐỌC: mọi ghi (kể cả session variable ghi vào bảng) sẽ lỗi\n" +
@@ -889,8 +891,8 @@ SS.addQuestions('sql', [
         "-- TRANSACTION — trả kết nối về pool sau MỖI transaction. GỘP TỐT NHẤT,\n" +
         "--   là mode dùng phổ biến nhất. NHƯNG KHÔNG dùng được:\n" +
         "--     prepared statement ở cấp phiên (phải tắt hoặc dùng protocol mới),\n" +
-        "--     SET/RESET ở cấp phiên, advisory lock theo PHIÊN, LISTEN/NOTIFY,\n" +
-        "--     temporary table, cursor giữ qua nhiều transaction.\n" +
+        "--     SET/RESET ở cấp phiên, advisory lock theo PHIÊN, LISTEN,\n" +
+        "--     temporary table giữ qua transaction, cursor WITH HOLD.\n" +
         "-- STATEMENT — trả về sau mỗi CÂU LỆNH. Không dùng được transaction nhiều câu.\n" +
         "\n" +
         "-- VỚI TRANSACTION MODE, cấu hình client cho đúng:\n" +
@@ -912,9 +914,9 @@ SS.addQuestions('sql', [
   answer:
     'Từ chậm tới nhanh:\n' +
     '- `INSERT` từng hàng trong vòng lặp (autocommit) — chậm nhất (RTT + fsync mỗi hàng).\n' +
-    '- **Multi-row `INSERT`**: `INSERT INTO t VALUES (...), (...), ...` — vài trăm hàng/câu, một transaction.\n' +
     '- **Batch trong một transaction**: gộp nhiều `INSERT` + một `COMMIT`.\n' +
-    '- **`COPY`** (Postgres) / `LOAD DATA INFILE` (MySQL): đường nạp dữ liệu chuyên dụng, bỏ qua nhiều overhead parse/plan — nhanh gấp 10–100 lần.\n\n' +
+    '- **Multi-row `INSERT`**: `INSERT INTO t VALUES (...), (...), ...` — vài trăm hàng/câu, một transaction.\n' +
+    '- **`COPY`** (Postgres) / `LOAD DATA INFILE` (MySQL): đường nạp dữ liệu chuyên dụng, bỏ qua nhiều overhead parse/plan. Mức nhanh hơn phụ thuộc mạng, đĩa, index và kích thước hàng.\n\n' +
     'Kèm: drop/disable index và FK trong lúc nạp lớn rồi tạo lại; `ANALYZE` sau khi xong.',
   essence:
     'Chi phí insert nằm ở overhead per-statement và fsync per-commit, không phải per-row. Gộp hàng vào ít câu lệnh + ít commit; dùng `COPY` cho nạp dữ liệu thật sự lớn.',
@@ -922,14 +924,14 @@ SS.addQuestions('sql', [
     'Import 10 triệu hàng: `INSERT` từng dòng ~3 giờ. `COPY orders FROM STDIN` với dữ liệu CSV ~90 giây. Nếu qua ORM: batch 1000 hàng/câu multi-row INSERT + commit mỗi 10k → ~10 phút.',
   viz: {
     type: 'bars',
-    title: 'Chi phí nằm ở overhead per-statement + fsync per-commit',
+    title: 'Một phép đo 5.000 hàng qua socket cục bộ — tỉ lệ thực tế đổi theo hệ thống',
     unit: '× nhanh hơn',
     scale: 'log',
     items: [
       { label: 'INSERT từng hàng (autocommit)', value: 1, note: 'RTT + fsync mỗi hàng — chậm nhất' },
-      { label: 'Multi-row INSERT', value: 20, note: 'vài trăm hàng/câu, một transaction' },
-      { label: 'Batch trong một transaction', value: 30, note: 'nhiều INSERT + một COMMIT' },
-      { label: 'COPY / LOAD DATA INFILE', value: 120, note: 'đường nạp chuyên dụng, bỏ qua overhead parse/plan' },
+      { label: 'Batch trong một transaction', value: 3.9, note: 'nhiều INSERT + một COMMIT' },
+      { label: 'Multi-row INSERT', value: 4.3, note: 'một câu nhiều hàng, một transaction' },
+      { label: 'COPY', value: 9.9, note: 'đường nạp chuyên dụng, bỏ qua overhead parse/plan' },
     ],
   },
   demo: [
@@ -944,23 +946,23 @@ SS.addQuestions('sql', [
         "-- NHANH HƠN: gộp nhiều hàng trong MỘT câu\n" +
         "INSERT INTO orders (customer_id, amount) VALUES\n" +
         "  (1, 100), (2, 200), (3, 300), ... ;       -- 500-1000 hàng mỗi câu là hợp lý\n" +
-        "-- Nhanh hơn khoảng 5-10 lần. Đừng gộp quá lớn (giới hạn tham số và bộ nhớ).\n" +
+        "-- Giảm số round-trip và commit. Đừng gộp quá lớn (giới hạn tham số và bộ nhớ).\n" +
         "\n" +
         "-- NHANH NHẤT: COPY — đường nạp dữ liệu chuyên dụng, bỏ qua phần lớn\n" +
         "-- chi phí phân tích câu lệnh\n" +
         "COPY orders (customer_id, amount) FROM \u0027/tmp/orders.csv\u0027 WITH (FORMAT csv, HEADER);\n" +
         "COPY orders (customer_id, amount) FROM STDIN WITH (FORMAT csv);\n" +
         "-- Từ ứng dụng: PostgreSQL JDBC có CopyManager; psql có \\copy (chạy phía client).\n" +
-        "-- Nhanh hơn INSERT thường 10-100 lần.\n" +
+        "-- Thường là đường nhanh nhất; hãy đo trên hệ thống thật.\n" +
         "\n" +
         "-- TỐI ƯU THÊM cho lần nạp dữ liệu LỚN (một lần):\n" +
         "BEGIN;\n" +
-        "  ALTER TABLE orders SET UNLOGGED;         -- bỏ ghi WAL (MẤT dữ liệu nếu sập!)\n" +
-        "  DROP INDEX idx_orders_customer;          -- bỏ index trước khi nạp\n" +
+        "  DROP INDEX idx_orders_customer;          -- bỏ index trước khi nạp (khoá bảng)\n" +
         "  COPY orders FROM STDIN WITH (FORMAT csv);\n" +
         "  CREATE INDEX idx_orders_customer ON orders (customer_id);   -- tạo lại sau\n" +
-        "  ALTER TABLE orders SET LOGGED;\n" +
         "COMMIT;\n" +
+        "-- SET UNLOGGED rồi SET LOGGED không tiết kiệm WAL khi wal_level = replica:\n" +
+        "-- bước SET LOGGED ghi lại dữ liệu vào WAL.\n" +
         "ANALYZE orders;                            -- BẮT BUỘC: cập nhật statistics\n" +
         "-- Tạo index SAU khi nạp nhanh hơn nhiều so với cập nhật index từng hàng.\n" +
         "\n" +
@@ -1150,8 +1152,8 @@ SS.addQuestions('sql', [
         "-- CHỌN NoSQL KHI:\n" +
         "--  DOCUMENT (MongoDB): schema thay đổi liên tục, dữ liệu lồng nhau tự nhiên,\n" +
         "--    truy vấn chủ yếu theo một khoá gốc\n" +
-        "--  KEY-VALUE (Redis, DynamoDB): truy cập theo khoá, quy mô cực lớn, độ trễ\n" +
-        "--    dưới mili giây, mẫu truy vấn BIẾT TRƯỚC\n" +
+        "--  KEY-VALUE (Redis, DynamoDB): truy cập theo khoá, quy mô lớn, độ trễ rất\n" +
+        "--    thấp (DynamoDB: vài mili giây), mẫu truy vấn BIẾT TRƯỚC\n" +
         "--  COLUMN-FAMILY (Cassandra): ghi rất nhiều, phân tán nhiều vùng, chấp nhận\n" +
         "--    nhất quán cuối cùng\n" +
         "--  GRAPH (Neo4j): quan hệ nhiều tầng là trung tâm (mạng xã hội, phát hiện gian lận)\n" +
@@ -1242,7 +1244,7 @@ SS.addQuestions('sql', [
   id: 'sql-195gufs',
   q: 'Prepared statements: lợi ích và cạm bẫy (plan caching)?',
   answer:
-    'Prepared statement: parse + plan một lần, thực thi nhiều lần với tham số khác nhau → tiết kiệm parse/plan overhead, chống SQL injection.\n\n' +
+    'Prepared statement: phân tích câu lệnh một lần, thực thi nhiều lần với tham số khác nhau và có thể tái dùng plan → giảm overhead, chống SQL injection.\n\n' +
     'Cạm bẫy — **generic plan vs custom plan**:\n' +
     '- Postgres sau 5 lần thực thi có thể chuyển sang **generic plan** (không nhìn giá trị tham số) → nếu dữ liệu lệch mạnh (skew), plan generic có thể tệ cho một số giá trị.\n' +
     '- Ví dụ `WHERE status = $1`: `status = \'PENDING\'` (0.1%) cần index scan, `status = \'DONE\'` (99%) cần seq scan → một plan không thể tối ưu cả hai.\n\n' +
@@ -1254,9 +1256,9 @@ SS.addQuestions('sql', [
   viz: {
     type: 'flow',
     title: 'Với cột phân bố lệch mạnh, plan cache "trung bình" có thể chậm thảm hại',
-    nodes: ['PREPARE: parse + plan 1 lần', 'Custom plan (lần 1–5)', 'Generic plan (sau 5 lần)', 'Dữ liệu skew → plan tệ cho giá trị hiếm'],
+    nodes: ['PREPARE: parse 1 lần', 'Custom plan (lần 1–5)', 'Generic plan (sau 5 lần)', 'Dữ liệu skew → plan tệ cho giá trị hiếm'],
     steps: [
-      { to: 0, label: 'Tiết kiệm parse/plan overhead, chống SQL injection' },
+      { to: 0, label: 'Giảm overhead, chống SQL injection' },
       { to: 1, label: 'Postgres nhìn giá trị tham số, chọn plan phù hợp từng lần' },
       { to: 2, label: 'Chuyển sang generic plan — không nhìn giá trị tham số nữa' },
       { to: 3, label: 'status=\'PENDING\' (0.1%) cần index; status=\'DONE\' (99%) cần seq — một plan không tối ưu cả hai. Fix: force_custom_plan' },
